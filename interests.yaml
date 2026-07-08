@@ -1,18 +1,21 @@
 summary: >
-  I'm interested in practical, applied AI systems: retrieval-augmented
-  generation, agent architectures, evaluation methodology for LLMs, and
-  recommender/ranking systems. I prefer papers with real experiments over
-  pure theory.
+  I'm interested in agentic recommender systems and practical tooling for
+  building AI systems -- especially papers that introduce genuinely new
+  architectural approaches rather than incremental tweaks, like agent
+  memory built on reconstruction instead of plain retrieval. I prefer
+  papers with real experiments over pure theory.
 topics:
-  - retrieval-augmented generation
-  - agent evaluation
-  - recommender systems
+  - agentic recommender systems
+  - agent architectures
+  - agent memory
+  - AI builder tooling
   - LLM evaluation
 keywords:
-  - RAG
   - agents
-  - evaluation
+  - recommender systems
+  - memory
   - ranking
-  - embeddings
+  - tool use
+  - evaluation
 liked_examples:
-  - "Self-RAG: Learning to Retrieve, Generate, and Critique through Self-Reflection"
+  - "Memory is Reconstructed, Not Retrieved: Graph Memory for LLM Agents"
