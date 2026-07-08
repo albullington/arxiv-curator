@@ -58,8 +58,10 @@ arxiv-curator/
   digests/                       # committed markdown output — this is "viewable on GitHub"
   .github/workflows/
     ci.yml                       # pytest on push/PR — no LLM calls in any test, no secrets needed
-    daily-digest.yml             # scheduled fetch→summarize→rank→digest, commits result
+    daily-digest.yml             # scheduled fetch→summarize→rank→digest, commits digests/ only
 ```
+
+**Scheduled workflow state:** the sqlite db (`data/arxiv_curator.db`) stays gitignored — it holds your feedback notes and ratings, which shouldn't be forced into a public repo's git history just to make the daily workflow work. `daily-digest.yml` persists it across scheduled runs using `actions/cache` (a mutable cache entry keyed by a fixed prefix, restored at the start of each run and re-saved at the end) rather than committing it. Only `digests/*.md` gets committed by the workflow.
 
 ## Components
 
@@ -71,7 +73,7 @@ arxiv-curator/
 
 **interests.yaml** — free text: `summary` (paragraph), `topics` (list), `keywords` (list), optional `liked_examples` (arxiv ids/blurbs). The whole document is embedded once into an "interest vector," recomputed whenever the file changes (hash-checked).
 
-**llm/embeddings.py** — embeddings always run locally via `sentence-transformers` (`all-MiniLM-L6-v2`), independent of the LLM provider used for text generation. Gemini's chat API is not used for embeddings; this keeps ranking free, fast, and deterministic, and means all embedding-dependent code (`rank.py`, `eval.py`) can be tested without any network access.
+**llm/embeddings.py** — thin wrapper around Gemini's embeddings endpoint (`embed_texts(texts: list[str]) -> np.ndarray`). Since Gemini is the only provider in v1, using its embeddings API avoids pulling in a ~2GB local model (`sentence-transformers` + torch) for a capability the provider already offers. This means `rank`/`eval` need network + `GEMINI_API_KEY` to embed papers — the same requirement `summarize`/`explain` already have, so it's not a new constraint in practice. Pure ranking/eval math (`rank.py`'s scoring functions, `eval.py`'s metrics) is still tested against fixed, hand-computed vectors with no network call; only the thin orchestration layer that wires embeddings + db + LLM together needs `embed_texts` monkeypatched in tests.
 
 **llm/base.py + factory.py** — `Summarizer.summarize(paper) -> str` and `Explainer.explain(paper, interest_profile, signals) -> str` protocols, implemented by `gemini_provider.py`. `factory.get_provider()` reads `GEMINI_API_KEY` and constructs the Gemini provider; if the key is missing, it raises a clear configuration error immediately rather than silently degrading. The protocol exists so a second provider can be added later without touching `rank.py`, `digest.py`, or the CLI — but no second provider ships in v1.
 
