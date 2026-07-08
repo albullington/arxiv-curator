@@ -9,18 +9,20 @@ Keeping up with new arXiv papers is manual and low-signal: you either skim categ
 ## Goals
 
 - Fetch newest papers from arXiv, deduped, filtered by category.
-- Summarize abstracts via a pluggable LLM provider (Gemini first, Anthropic as an alternative, local/offline fallback for CI).
+- Summarize abstracts via Gemini, behind a `Summarizer`/`Explainer` interface general enough to add another provider later.
 - Rank papers against a free-text interest profile using embeddings + a feedback-adjusted score.
 - Record feedback: explicit up/down rating, free-text notes, and self-reported read depth (pages read / total pages).
 - Produce a grounded, human-readable "why this matches you" explanation per paper.
 - Run ranking-quality evals against accumulated feedback.
-- Publish digests as committed markdown (source of truth) and a generated static HTML site via GitHub Pages.
-- Ship CI that runs without any API key (local provider), plus a scheduled workflow that runs the real pipeline with a provider key.
+- Publish digests as committed markdown — GitHub renders `.md` natively in the browser, so this alone satisfies "viewable on GitHub."
+- Ship CI covering everything that doesn't require an LLM call (fetch parsing, db, rank math, eval math), plus a scheduled workflow that runs the real pipeline with a Gemini key.
 
 ## Non-goals (v1)
 
 - No PDF viewer / reader — read-depth is self-reported via CLI flag, not measured automatically.
-- No email delivery of digests — viewing is via committed markdown and/or GitHub Pages.
+- No email delivery of digests, no GitHub Pages / generated HTML site — a committed markdown file is sufficient, since GitHub already renders it in the browser.
+- No offline/local LLM fallback provider — Gemini is the only provider implemented; if it's unavailable, the affected command fails with a clear error rather than silently degrading to lower-quality output.
+- No second LLM provider (e.g. Anthropic) implemented in v1 — the interface is provider-agnostic, but only Gemini is built.
 - No multi-user support, no hosted database — single local SQLite file, single interest profile.
 - No training of a real ML classifier — ranking adjustment uses a Rocchio-style centroid method, not a trained model.
 
@@ -41,24 +43,21 @@ arxiv-curator/
     fetch.py                     # arXiv Atom API client + dedup
     llm/
       base.py                    # Protocols: Summarizer, Explainer
-      anthropic_provider.py      # Claude-backed summarizer/explainer
-      gemini_provider.py         # Gemini-backed summarizer/explainer
-      local_provider.py          # offline fallback (extractive summary, template explanation)
+      gemini_provider.py         # Gemini-backed summarizer/explainer (only implementation in v1)
       embeddings.py              # sentence-transformers embedder (always local, provider-independent)
-      factory.py                 # picks provider from env/config
+      factory.py                 # reads GEMINI_API_KEY, constructs the Gemini provider
     rank.py                      # Rocchio-style centroid ranking + "why this matches"
     feedback.py                  # record/read feedback (rating, note, read-depth)
-    digest.py                    # renders markdown digest + generates docs/ HTML mirror
+    digest.py                    # renders markdown digest (digests/YYYY-MM-DD.md + digests/latest.md)
     eval.py                      # ranking-quality eval (leave-one-out precision/NDCG vs baselines)
   tests/
     test_fetch.py
     test_db.py
     test_rank.py
     test_eval.py
-  digests/                       # committed markdown output (source of truth)
-  docs/                          # generated static HTML site, served by GitHub Pages
+  digests/                       # committed markdown output — this is "viewable on GitHub"
   .github/workflows/
-    ci.yml                       # pytest on push/PR, local provider, no secrets needed
+    ci.yml                       # pytest on push/PR — no LLM calls in any test, no secrets needed
     daily-digest.yml             # scheduled fetch→summarize→rank→digest, commits result
 ```
 
@@ -72,9 +71,9 @@ arxiv-curator/
 
 **interests.yaml** — free text: `summary` (paragraph), `topics` (list), `keywords` (list), optional `liked_examples` (arxiv ids/blurbs). The whole document is embedded once into an "interest vector," recomputed whenever the file changes (hash-checked).
 
-**llm/embeddings.py** — embeddings always run locally via `sentence-transformers` (`all-MiniLM-L6-v2`), independent of which LLM provider is configured for text generation. Neither Anthropic nor Gemini's chat APIs are used for embeddings; this keeps ranking free, fast, and deterministic, and avoids provider lock-in for the similarity math the whole system depends on.
+**llm/embeddings.py** — embeddings always run locally via `sentence-transformers` (`all-MiniLM-L6-v2`), independent of the LLM provider used for text generation. Gemini's chat API is not used for embeddings; this keeps ranking free, fast, and deterministic, and means all embedding-dependent code (`rank.py`, `eval.py`) can be tested without any network access.
 
-**llm/base.py + factory.py** — `Summarizer.summarize(paper) -> str` and `Explainer.explain(paper, interest_profile, signals) -> str` protocols. `factory.get_provider()` selects a provider via `LLM_PROVIDER` env var (`gemini` / `anthropic` / `local`), defaulting by whichever API key is present (`GEMINI_API_KEY` or `ANTHROPIC_API_KEY`), falling back to the local/offline provider if neither is set. The local provider is deterministic (extractive summary: first N sentences of the abstract; templated explanation from the same signals used elsewhere) so tests and CI need no network access or secrets.
+**llm/base.py + factory.py** — `Summarizer.summarize(paper) -> str` and `Explainer.explain(paper, interest_profile, signals) -> str` protocols, implemented by `gemini_provider.py`. `factory.get_provider()` reads `GEMINI_API_KEY` and constructs the Gemini provider; if the key is missing, it raises a clear configuration error immediately rather than silently degrading. The protocol exists so a second provider can be added later without touching `rank.py`, `digest.py`, or the CLI — but no second provider ships in v1.
 
 **rank.py** — Rocchio-style relevance feedback:
 - `base_score = cosine(interest_vector, paper_vector)`
@@ -85,7 +84,7 @@ arxiv-curator/
 
 **feedback.py** — `record_feedback(arxiv_id, rating=None, note=None, pages_read=None, total_pages=None)` and `list_feedback()`. No PDF viewer in v1: you read the paper in whatever tool you already use and self-report progress via `arxiv-curator feedback <id> --pages-read 5 --total-pages 12`.
 
-**digest.py** — renders `digests/YYYY-MM-DD.md` (ranked list, summary, score, explanation, feedback command hints) as the committed source of truth, and regenerates a static HTML mirror into `docs/` (`docs/index.html` = latest digest, `docs/archive/YYYY-MM-DD.html` for history) using the `markdown` package plus a minimal shared template — no JS framework.
+**digest.py** — renders `digests/YYYY-MM-DD.md` (ranked list, summary, score, explanation, feedback command hints) as the committed source of truth, and overwrites `digests/latest.md` with the same content so there's one stable link to "today's digest" without needing to know the date. GitHub renders both natively in the browser — no HTML generation, no Pages setup.
 
 **eval.py** — leave-one-out evaluation: for each feedback item, rebuild the liked/disliked centroids from all *other* feedback, rank a snapshot of candidate papers, and measure where the held-out item lands. Reports Precision@5, Precision@10, NDCG@10, and MRR of liked papers, against two baselines (random order; similarity-only with no feedback adjustment). Reports "insufficient data" rather than a misleading number when feedback volume is too low (threshold: fewer than 5 rated papers).
 
@@ -108,13 +107,13 @@ arxiv-curator run        # fetch + summarize + rank + digest, used by the schedu
 2. `summarize` generates a `Summary` per paper missing one, via the configured LLM provider.
 3. `rank` embeds any un-embedded papers, computes Rocchio-adjusted scores + explanations → `scores` table.
 4. `feedback` records a rating/read-depth/note against an `arxiv_id` → `feedback` table, which feeds back into the next `rank` run's centroids.
-5. `digest` reads the latest `scores` + `summaries` and renders markdown + HTML.
+5. `digest` reads the latest `scores` + `summaries` and renders `digests/YYYY-MM-DD.md` + `digests/latest.md`.
 6. `eval` reads `feedback` + historical embeddings to score ranking quality.
 
 ## Error handling
 
 - Network failures in `fetch` (arXiv API) are caught and reported per-request; partial results already fetched are still stored (no all-or-nothing transaction spanning the whole fetch).
-- LLM provider failures (rate limit, timeout, missing key) fall back to the local provider for that run rather than crashing the whole pipeline, with a warning printed to stderr.
+- Missing `GEMINI_API_KEY` or a Gemini API error (rate limit, timeout) fails the `summarize`/`rank` (explanation step) command clearly and stops — no silent fallback, since there's no second provider to fall back to.
 - `rank`/`eval` with zero feedback rows degrade gracefully: ranking uses similarity-only (no Rocchio adjustment), and eval reports "insufficient data."
 - Malformed `interests.yaml` (missing required `summary` field) fails fast with a clear CLI error before any network calls.
 
@@ -124,10 +123,12 @@ arxiv-curator run        # fetch + summarize + rank + digest, used by the schedu
 - `test_db.py` — CRUD round-trips on a temporary SQLite file for all four tables.
 - `test_rank.py` — cosine similarity and Rocchio centroid math against fixed, hand-computed dummy vectors (no real embedding model invoked).
 - `test_eval.py` — precision/NDCG/MRR computed correctly against a small synthetic labeled dataset with known expected metrics.
-- CI (`ci.yml`) runs all of the above using the local LLM provider — no API key required, fully reproducible.
+- None of the above tests call Gemini or need any API key — `summarize`/`rank`'s LLM-calling paths aren't unit tested against the real API in v1, only the pure logic around them (embedding math, signal computation). CI (`ci.yml`) runs the full suite with zero secrets.
 
 ## Open items deferred to later versions
 
 - PDF viewer with automatic read tracking.
 - Emailed digests.
+- GitHub Pages / generated HTML site, if plain markdown ever feels insufficient.
+- A second LLM provider (e.g. Anthropic), if Gemini alone proves limiting.
 - Trained (non-heuristic) ranking model, once enough feedback accumulates to make one worthwhile.
