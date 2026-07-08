@@ -103,10 +103,14 @@ def rank_papers(conn, interests_path, provider, client) -> list[Score]:
     for paper in papers:
         vec = vectors_by_id[paper.arxiv_id]
         similarity, adjustment, final = score_paper(vec, interest_vector, mean_liked, mean_disliked)
-        keywords = overlapping_keywords(paper.abstract, profile.keywords)
-        closest = most_similar_liked(vec, liked_vectors_by_id)
-        signals = {"overlapping_keywords": keywords, "most_similar_liked": closest}
-        explanation = provider.explain(paper, profile_text, signals)
+        existing_score = db.get_score(conn, paper.arxiv_id)
+        if existing_score is not None:
+            explanation = existing_score.explanation
+        else:
+            keywords = overlapping_keywords(paper.abstract, profile.keywords)
+            closest = most_similar_liked(vec, liked_vectors_by_id)
+            signals = {"overlapping_keywords": keywords, "most_similar_liked": closest}
+            explanation = provider.explain(paper, profile_text, signals)
         score = Score(
             arxiv_id=paper.arxiv_id, similarity=similarity, feedback_adjustment=adjustment,
             final_score=final, explanation=explanation,

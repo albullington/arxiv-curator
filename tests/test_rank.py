@@ -145,3 +145,65 @@ def test_get_paper_vectors_only_embeds_missing_papers(monkeypatch):
     assert list(vectors_by_id["fresh1"]) == [0.0, 1.0]
     assert embed_calls == [["needs embedding"]]
     assert list(db.get_embeddings(conn, ["fresh1"])["fresh1"]) == [0.0, 1.0]
+
+
+def test_rank_papers_reuses_existing_explanation_on_rerank(tmp_path, monkeypatch):
+    conn = db.get_connection(":memory:")
+    db.init_db(conn)
+    db.insert_paper(conn, make_paper("cached1", "This paper is about transformers."))
+
+    interests_path = tmp_path / "interests.yaml"
+    interests_path.write_text("summary: I like transformers.\n")
+
+    def fake_embed_texts(texts, client):
+        return np.array([[1.0, 0.0] for _ in texts])
+
+    monkeypatch.setattr(rank, "embed_texts", fake_embed_texts)
+
+    class CountingExplainer:
+        def __init__(self):
+            self.calls = 0
+
+        def explain(self, paper, interest_profile_text, signals):
+            self.calls += 1
+            return f"explanation #{self.calls} for {paper.arxiv_id}"
+
+    explainer = CountingExplainer()
+
+    rank.rank_papers(conn, interests_path, explainer, client=None)
+    assert explainer.calls == 1
+    first_explanation = db.get_score(conn, "cached1").explanation
+
+    rank.rank_papers(conn, interests_path, explainer, client=None)
+    assert explainer.calls == 1
+    assert db.get_score(conn, "cached1").explanation == first_explanation
+
+
+def test_rank_papers_explains_only_newly_added_papers(tmp_path, monkeypatch):
+    conn = db.get_connection(":memory:")
+    db.init_db(conn)
+    db.insert_paper(conn, make_paper("old1", "This paper is about transformers."))
+
+    interests_path = tmp_path / "interests.yaml"
+    interests_path.write_text("summary: I like transformers.\n")
+
+    def fake_embed_texts(texts, client):
+        return np.array([[1.0, 0.0] for _ in texts])
+
+    monkeypatch.setattr(rank, "embed_texts", fake_embed_texts)
+
+    class CountingExplainer:
+        def __init__(self):
+            self.calls = 0
+
+        def explain(self, paper, interest_profile_text, signals):
+            self.calls += 1
+            return f"explanation #{self.calls}"
+
+    explainer = CountingExplainer()
+    rank.rank_papers(conn, interests_path, explainer, client=None)
+    assert explainer.calls == 1
+
+    db.insert_paper(conn, make_paper("new1", "Another transformers paper."))
+    rank.rank_papers(conn, interests_path, explainer, client=None)
+    assert explainer.calls == 2

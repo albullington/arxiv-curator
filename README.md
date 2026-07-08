@@ -34,6 +34,11 @@ disliked papers nudges future scores toward what you've responded to.
 Each ranked paper gets a grounded "why this matches" explanation, built
 from real signals (overlapping keywords, closest liked paper) rather
 than free-floating LLM justification.
+Each paper's explanation is generated once (the first time it's ranked)
+and reused after that, even as your interests or feedback evolve --
+only the numeric score recomputes on every run. This keeps cost and
+runtime bounded by how many papers are new, not by how many you've
+accumulated.
 
 ## Viewing digests
 
