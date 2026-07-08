@@ -120,3 +120,28 @@ def test_rank_papers_scores_relevant_paper_higher(tmp_path, monkeypatch):
     assert scores_by_id["relevant1"].final_score > scores_by_id["irrelevant1"].final_score
     assert "relevant1" in scores_by_id["relevant1"].explanation
     assert db.get_score(conn, "relevant1") is not None
+
+
+def test_get_paper_vectors_only_embeds_missing_papers(monkeypatch):
+    conn = db.get_connection(":memory:")
+    db.init_db(conn)
+    cached_paper = make_paper("cached1", "already embedded")
+    fresh_paper = make_paper("fresh1", "needs embedding")
+    db.insert_paper(conn, cached_paper)
+    db.insert_paper(conn, fresh_paper)
+    db.upsert_embedding(conn, "cached1", [1.0, 1.0])
+
+    embed_calls = []
+
+    def fake_embed_texts(texts, client):
+        embed_calls.append(texts)
+        return np.array([[0.0, 1.0] for _ in texts])
+
+    monkeypatch.setattr(rank, "embed_texts", fake_embed_texts)
+
+    vectors_by_id = rank.get_paper_vectors(conn, [cached_paper, fresh_paper], client=None)
+
+    assert list(vectors_by_id["cached1"]) == [1.0, 1.0]
+    assert list(vectors_by_id["fresh1"]) == [0.0, 1.0]
+    assert embed_calls == [["needs embedding"]]
+    assert list(db.get_embeddings(conn, ["fresh1"])["fresh1"]) == [0.0, 1.0]

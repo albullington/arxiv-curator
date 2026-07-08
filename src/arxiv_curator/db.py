@@ -1,5 +1,9 @@
+import json
 import sqlite3
+from datetime import datetime, timezone
 from typing import Optional
+
+import numpy as np
 
 from arxiv_curator.models import Paper, Summary, Score, Feedback
 
@@ -36,6 +40,12 @@ CREATE TABLE IF NOT EXISTS feedback (
     pages_read INTEGER,
     total_pages INTEGER,
     note TEXT,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS embeddings (
+    arxiv_id TEXT PRIMARY KEY REFERENCES papers(arxiv_id),
+    vector TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
 """
@@ -153,3 +163,22 @@ def insert_feedback(conn, feedback: Feedback) -> None:
 def list_feedback(conn) -> list[Feedback]:
     rows = conn.execute("SELECT * FROM feedback ORDER BY id").fetchall()
     return [_row_to_feedback(row) for row in rows]
+
+
+def upsert_embedding(conn, arxiv_id: str, vector) -> None:
+    conn.execute(
+        "INSERT OR REPLACE INTO embeddings (arxiv_id, vector, created_at) VALUES (?, ?, ?)",
+        (arxiv_id, json.dumps([float(x) for x in vector]), datetime.now(timezone.utc).isoformat()),
+    )
+    conn.commit()
+
+
+def get_embeddings(conn, arxiv_ids: list[str]) -> dict:
+    if not arxiv_ids:
+        return {}
+    placeholders = ",".join("?" for _ in arxiv_ids)
+    rows = conn.execute(
+        f"SELECT arxiv_id, vector FROM embeddings WHERE arxiv_id IN ({placeholders})",
+        arxiv_ids,
+    ).fetchall()
+    return {row["arxiv_id"]: np.array(json.loads(row["vector"])) for row in rows}

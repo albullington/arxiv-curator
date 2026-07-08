@@ -12,6 +12,18 @@ DEFAULT_ALPHA = 0.3
 DEFAULT_BETA = 0.3
 
 
+def get_paper_vectors(conn, papers, client) -> dict:
+    arxiv_ids = [p.arxiv_id for p in papers]
+    vectors_by_id = db.get_embeddings(conn, arxiv_ids)
+    missing = [p for p in papers if p.arxiv_id not in vectors_by_id]
+    if missing:
+        new_vectors = embed_texts([p.abstract for p in missing], client)
+        for paper, vector in zip(missing, new_vectors):
+            db.upsert_embedding(conn, paper.arxiv_id, vector)
+            vectors_by_id[paper.arxiv_id] = vector
+    return vectors_by_id
+
+
 def feedback_weight(feedback: Feedback) -> float:
     if feedback.pages_read is not None and feedback.total_pages:
         return 0.5 + 0.5 * (feedback.pages_read / feedback.total_pages)
@@ -80,9 +92,7 @@ def rank_papers(conn, interests_path, provider, client) -> list[Score]:
     papers = db.list_papers(conn)
     if not papers:
         return []
-    abstracts = [p.abstract for p in papers]
-    paper_vectors = embed_texts(abstracts, client)
-    vectors_by_id = {p.arxiv_id: vec for p, vec in zip(papers, paper_vectors)}
+    vectors_by_id = get_paper_vectors(conn, papers, client)
 
     feedback_items = db.list_feedback(conn)
     liked_ids = {fb.arxiv_id for fb in feedback_items if fb.rating == "up"}

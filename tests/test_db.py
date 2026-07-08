@@ -71,3 +71,28 @@ def test_feedback_insert_and_list():
     assert len(items) == 2
     assert items[0].rating == "up"
     assert items[1].pages_read == 5
+
+
+def test_upsert_and_get_embeddings_round_trip():
+    conn = make_conn()
+    db.insert_paper(conn, make_paper("2601.00001"))
+    db.upsert_embedding(conn, "2601.00001", [1.0, 0.5, -0.25])
+    result = db.get_embeddings(conn, ["2601.00001"])
+    assert list(result["2601.00001"]) == [1.0, 0.5, -0.25]
+
+
+def test_get_embeddings_omits_uncached_ids():
+    conn = make_conn()
+    db.insert_paper(conn, make_paper("2601.00001"))
+    result = db.get_embeddings(conn, ["2601.00001", "9999.00000"])
+    assert "2601.00001" not in result
+    assert "9999.00000" not in result
+
+
+def test_upsert_embedding_replaces_previous():
+    conn = make_conn()
+    db.insert_paper(conn, make_paper("2601.00001"))
+    db.upsert_embedding(conn, "2601.00001", [1.0, 0.0])
+    db.upsert_embedding(conn, "2601.00001", [0.0, 1.0])
+    result = db.get_embeddings(conn, ["2601.00001"])
+    assert list(result["2601.00001"]) == [0.0, 1.0]

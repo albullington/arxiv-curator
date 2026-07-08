@@ -108,7 +108,6 @@ def run_eval(conn, interests_path, client) -> dict:
     profile = load_interest_profile(interests_path)
     interest_vector = embed_texts([profile_to_text(profile)], client)[0]
     papers = db.list_papers(conn)
-    vectors = embed_texts([p.abstract for p in papers], client) if papers else np.empty((0, 0))
-    vectors_by_id = {p.arxiv_id: vec for p, vec in zip(papers, vectors)}
+    vectors_by_id = rank.get_paper_vectors(conn, papers, client) if papers else {}
     feedback_items = db.list_feedback(conn)
     return evaluate(feedback_items, vectors_by_id, interest_vector)

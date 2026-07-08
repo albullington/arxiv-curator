@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from arxiv_curator import db, eval as eval_module
+from arxiv_curator import db, eval as eval_module, rank
 from arxiv_curator.models import Feedback, Paper
 from arxiv_curator.eval import precision_at_k, ndcg_at_k, mrr, evaluate
 
@@ -81,5 +81,6 @@ def test_run_eval_wires_db_and_embeddings(tmp_path, monkeypatch):
         return np.array([[1.0, 0.0] if "transformer" in t.lower() else [0.0, 1.0] for t in texts])
 
     monkeypatch.setattr(eval_module, "embed_texts", fake_embed_texts)
+    monkeypatch.setattr(rank, "embed_texts", fake_embed_texts)
     result = eval_module.run_eval(conn, interests_path, client=None)
     assert result["status"] == "ok"
