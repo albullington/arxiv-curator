@@ -1,0 +1,51 @@
+import feedparser
+import requests
+
+from arxiv_curator import db
+from arxiv_curator.models import Paper
+
+ARXIV_API_URL = "http://export.arxiv.org/api/query"
+
+
+def build_query_url(categories: list[str], max_results: int) -> str:
+    cat_query = "+OR+".join(f"cat:{c}" for c in categories)
+    return (
+        f"{ARXIV_API_URL}?search_query={cat_query}"
+        f"&sortBy=submittedDate&sortOrder=descending&max_results={max_results}"
+    )
+
+
+def parse_feed(raw_text: str) -> list[Paper]:
+    feed = feedparser.parse(raw_text)
+    papers = []
+    for entry in feed.entries:
+        arxiv_id = entry.id.split("/abs/")[-1]
+        authors = ", ".join(a.name for a in entry.get("authors", []))
+        categories = ", ".join(t.term for t in entry.get("tags", []))
+        papers.append(Paper(
+            arxiv_id=arxiv_id,
+            title=entry.title.replace("\n", " ").strip(),
+            authors=authors,
+            abstract=entry.summary.replace("\n", " ").strip(),
+            categories=categories,
+            published=entry.published,
+            url=entry.link,
+        ))
+    return papers
+
+
+def fetch_papers(categories: list[str], max_results: int) -> list[Paper]:
+    url = build_query_url(categories, max_results)
+    response = requests.get(url, timeout=30)
+    response.raise_for_status()
+    return parse_feed(response.text)
+
+
+def fetch_and_store(conn, categories: list[str], max_results: int) -> int:
+    papers = fetch_papers(categories, max_results)
+    new_count = 0
+    for paper in papers:
+        if not db.paper_exists(conn, paper.arxiv_id):
+            db.insert_paper(conn, paper)
+            new_count += 1
+    return new_count
