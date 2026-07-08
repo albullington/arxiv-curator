@@ -1,0 +1,83 @@
+import numpy as np
+import pytest
+
+from arxiv_curator.models import Feedback
+from arxiv_curator.rank import (
+    feedback_weight, compute_centroids, score_paper,
+    overlapping_keywords, most_similar_liked,
+)
+
+
+def test_feedback_weight_full_read_is_one():
+    fb = Feedback(arxiv_id="1", created_at="t", rating="up", pages_read=12, total_pages=12)
+    assert feedback_weight(fb) == pytest.approx(1.0)
+
+
+def test_feedback_weight_half_read_is_point_seven_five():
+    fb = Feedback(arxiv_id="1", created_at="t", rating="up", pages_read=6, total_pages=12)
+    assert feedback_weight(fb) == pytest.approx(0.75)
+
+
+def test_feedback_weight_no_read_depth_is_one():
+    fb = Feedback(arxiv_id="1", created_at="t", rating="up")
+    assert feedback_weight(fb) == pytest.approx(1.0)
+
+
+def test_compute_centroids_separates_liked_and_disliked():
+    vectors = {
+        "liked1": np.array([1.0, 0.0]),
+        "disliked1": np.array([0.0, 1.0]),
+    }
+    feedback_items = [
+        Feedback(arxiv_id="liked1", created_at="t", rating="up"),
+        Feedback(arxiv_id="disliked1", created_at="t", rating="down"),
+    ]
+    mean_liked, mean_disliked = compute_centroids(feedback_items, vectors)
+    assert list(mean_liked) == [1.0, 0.0]
+    assert list(mean_disliked) == [0.0, 1.0]
+
+
+def test_compute_centroids_with_no_feedback_returns_none():
+    mean_liked, mean_disliked = compute_centroids([], {})
+    assert mean_liked is None
+    assert mean_disliked is None
+
+
+def test_score_paper_adds_liked_centroid_and_subtracts_disliked():
+    paper_vector = np.array([1.0, 0.0])
+    interest_vector = np.array([1.0, 0.0])
+    mean_liked = np.array([1.0, 0.0])
+    mean_disliked = np.array([0.0, 1.0])
+    similarity, adjustment, final = score_paper(
+        paper_vector, interest_vector, mean_liked, mean_disliked, alpha=0.3, beta=0.3,
+    )
+    assert similarity == pytest.approx(1.0)
+    assert adjustment == pytest.approx(0.3)
+    assert final == pytest.approx(1.3)
+
+
+def test_score_paper_with_no_centroids_is_similarity_only():
+    paper_vector = np.array([1.0, 0.0])
+    interest_vector = np.array([1.0, 0.0])
+    similarity, adjustment, final = score_paper(paper_vector, interest_vector, None, None)
+    assert adjustment == 0.0
+    assert final == pytest.approx(similarity)
+
+
+def test_overlapping_keywords_is_case_insensitive():
+    abstract = "This paper studies Retrieval-Augmented Generation for agents."
+    keywords = ["retrieval", "gardening"]
+    assert overlapping_keywords(abstract, keywords) == ["retrieval"]
+
+
+def test_most_similar_liked_picks_closest_vector():
+    paper_vector = np.array([1.0, 0.0])
+    liked_vectors = {
+        "close": np.array([1.0, 0.1]),
+        "far": np.array([0.0, 1.0]),
+    }
+    assert most_similar_liked(paper_vector, liked_vectors) == "close"
+
+
+def test_most_similar_liked_with_no_liked_papers_returns_none():
+    assert most_similar_liked(np.array([1.0, 0.0]), {}) is None
