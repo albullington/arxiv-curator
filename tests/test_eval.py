@@ -61,6 +61,8 @@ def test_evaluate_returns_metrics_with_enough_feedback():
     assert "similarity_only_baseline" in result
     assert "random_baseline" in result
     assert 0.0 <= result["feedback_adjusted"]["precision_at_5"] <= 1.0
+    assert "precision_at_10" in result["similarity_only_baseline"]
+    assert "precision_at_10" in result["random_baseline"]
 
 
 def test_run_eval_wires_db_and_embeddings(tmp_path, monkeypatch):

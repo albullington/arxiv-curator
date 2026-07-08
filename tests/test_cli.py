@@ -67,3 +67,16 @@ def test_digest_command_writes_file(tmp_path, monkeypatch):
     result = runner.invoke(cli.app, ["digest"])
     assert result.exit_code == 0
     assert (digests_dir / "latest.md").exists()
+
+
+def test_summarize_command_fails_cleanly_without_api_key(tmp_path, monkeypatch):
+    db_path = tmp_path / "test.db"
+    seed_db(db_path)
+    monkeypatch.setattr(cli, "DB_PATH", db_path)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+
+    result = runner.invoke(cli.app, ["summarize"])
+
+    assert result.exit_code == 1
+    assert "GEMINI_API_KEY" in result.output
+    assert not isinstance(result.exception, RuntimeError)

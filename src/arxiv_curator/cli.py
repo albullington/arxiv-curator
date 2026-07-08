@@ -32,6 +32,11 @@ def get_conn():
     return conn
 
 
+def _fail(exc: Exception) -> None:
+    typer.echo(f"Error: {exc}")
+    raise typer.Exit(code=1)
+
+
 @app.command()
 def fetch(
     categories: str = typer.Option(DEFAULT_CATEGORIES),
@@ -45,23 +50,29 @@ def fetch(
 @app.command()
 def summarize(limit: int = typer.Option(50)):
     conn = get_conn()
-    client = factory.get_client()
-    provider = GeminiProvider(client)
-    for paper in db.papers_missing_summary(conn)[:limit]:
-        text = provider.summarize(paper)
-        db.insert_summary(conn, Summary(
-            arxiv_id=paper.arxiv_id, text=text,
-            created_at=datetime.now(timezone.utc).isoformat(),
-        ))
-        typer.echo(f"Summarized {paper.arxiv_id}")
+    try:
+        client = factory.get_client()
+        provider = GeminiProvider(client)
+        for paper in db.papers_missing_summary(conn)[:limit]:
+            text = provider.summarize(paper)
+            db.insert_summary(conn, Summary(
+                arxiv_id=paper.arxiv_id, text=text,
+                created_at=datetime.now(timezone.utc).isoformat(),
+            ))
+            typer.echo(f"Summarized {paper.arxiv_id}")
+    except Exception as exc:
+        _fail(exc)
 
 
 @app.command()
 def rank(top: int = typer.Option(20)):
     conn = get_conn()
-    client = factory.get_client()
-    provider = GeminiProvider(client)
-    scores = rank_module.rank_papers(conn, INTERESTS_PATH, provider, client)
+    try:
+        client = factory.get_client()
+        provider = GeminiProvider(client)
+        scores = rank_module.rank_papers(conn, INTERESTS_PATH, provider, client)
+    except Exception as exc:
+        _fail(exc)
     scores.sort(key=lambda s: s.final_score, reverse=True)
     for s in scores[:top]:
         typer.echo(f"{s.final_score:.3f}  {s.arxiv_id}")
@@ -114,24 +125,47 @@ def digest(top: int = typer.Option(20), since_days: int = typer.Option(DEFAULT_D
 @app.command(name="eval")
 def eval_cmd():
     conn = get_conn()
-    client = factory.get_client()
-    result = eval_module.run_eval(conn, INTERESTS_PATH, client)
-    typer.echo(result)
+    try:
+        client = factory.get_client()
+        result = eval_module.run_eval(conn, INTERESTS_PATH, client)
+    except Exception as exc:
+        _fail(exc)
+
+    if result["status"] == "insufficient_data":
+        typer.echo(
+            f"Insufficient feedback for eval ({result['rated_count']} rated papers, need at least 5)."
+        )
+        return
+
+    typer.echo(f"Evaluated {result['n_evaluated']} held-out papers.\n")
+    sections = [
+        ("Feedback-adjusted", "feedback_adjusted"),
+        ("Similarity-only baseline", "similarity_only_baseline"),
+        ("Random baseline", "random_baseline"),
+    ]
+    for label, key in sections:
+        typer.echo(f"{label}:")
+        for metric_name, value in result[key].items():
+            typer.echo(f"  {metric_name}: {value:.3f}")
+        typer.echo("")
 
 
 @app.command()
 def run():
     conn = get_conn()
-    client = factory.get_client()
-    provider = GeminiProvider(client)
-    fetch_module.fetch_and_store(conn, DEFAULT_CATEGORIES.split(","), 100)
-    for paper in db.papers_missing_summary(conn):
-        text = provider.summarize(paper)
-        db.insert_summary(conn, Summary(
-            arxiv_id=paper.arxiv_id, text=text,
-            created_at=datetime.now(timezone.utc).isoformat(),
-        ))
-    rank_module.rank_papers(conn, INTERESTS_PATH, provider, client)
+    try:
+        client = factory.get_client()
+        provider = GeminiProvider(client)
+        fetch_module.fetch_and_store(conn, DEFAULT_CATEGORIES.split(","), 100)
+        for paper in db.papers_missing_summary(conn):
+            text = provider.summarize(paper)
+            db.insert_summary(conn, Summary(
+                arxiv_id=paper.arxiv_id, text=text,
+                created_at=datetime.now(timezone.utc).isoformat(),
+            ))
+        rank_module.rank_papers(conn, INTERESTS_PATH, provider, client)
+    except Exception as exc:
+        _fail(exc)
     cutoff = (datetime.now(timezone.utc) - timedelta(days=DEFAULT_DIGEST_WINDOW_DAYS)).isoformat()
     path = digest_module.write_digest(conn, DIGESTS_DIR, 20, since=cutoff)
     typer.echo(f"Wrote {path}")

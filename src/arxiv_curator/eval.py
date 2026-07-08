@@ -57,8 +57,8 @@ def evaluate(
 
     metrics = {
         "feedback_adjusted": {"precision_at_5": [], "precision_at_10": [], "ndcg_at_10": [], "mrr": []},
-        "similarity_only_baseline": {"precision_at_5": [], "ndcg_at_10": [], "mrr": []},
-        "random_baseline": {"precision_at_5": [], "ndcg_at_10": [], "mrr": []},
+        "similarity_only_baseline": {"precision_at_5": [], "precision_at_10": [], "ndcg_at_10": [], "mrr": []},
+        "random_baseline": {"precision_at_5": [], "precision_at_10": [], "ndcg_at_10": [], "mrr": []},
     }
 
     n_evaluated = 0
@@ -87,10 +87,12 @@ def evaluate(
         metrics["feedback_adjusted"]["mrr"].append(mrr(adjusted_ranked, relevant))
 
         metrics["similarity_only_baseline"]["precision_at_5"].append(precision_at_k(similarity_ranked, relevant, 5))
+        metrics["similarity_only_baseline"]["precision_at_10"].append(precision_at_k(similarity_ranked, relevant, 10))
         metrics["similarity_only_baseline"]["ndcg_at_10"].append(ndcg_at_k(similarity_ranked, relevant, 10))
         metrics["similarity_only_baseline"]["mrr"].append(mrr(similarity_ranked, relevant))
 
         metrics["random_baseline"]["precision_at_5"].append(precision_at_k(random_ranked, relevant, 5))
+        metrics["random_baseline"]["precision_at_10"].append(precision_at_k(random_ranked, relevant, 10))
         metrics["random_baseline"]["ndcg_at_10"].append(ndcg_at_k(random_ranked, relevant, 10))
         metrics["random_baseline"]["mrr"].append(mrr(random_ranked, relevant))
         n_evaluated += 1
