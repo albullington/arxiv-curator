@@ -54,3 +54,25 @@ def test_provider_explain_returns_stripped_text():
     provider = GeminiProvider(client)
     signals = {"overlapping_keywords": [], "most_similar_liked": None}
     assert provider.explain(PAPER, "I like RAG.", signals) == "Matches your interests."
+
+
+def test_provider_summarize_retries_on_transient_error(monkeypatch):
+    from google.genai import errors
+
+    monkeypatch.setattr("arxiv_curator.llm.retry.time.sleep", lambda seconds: None)
+    calls = {"count": 0}
+
+    class FlakyModels:
+        def generate_content(self, model, contents):
+            calls["count"] += 1
+            if calls["count"] < 2:
+                raise errors.APIError(503, {"error": {"message": "high demand"}})
+            return SimpleNamespace(text="  Recovered summary.  ")
+
+    class FlakyClient:
+        def __init__(self):
+            self.models = FlakyModels()
+
+    provider = GeminiProvider(FlakyClient())
+    assert provider.summarize(PAPER) == "Recovered summary."
+    assert calls["count"] == 2
