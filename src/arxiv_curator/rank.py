@@ -1,9 +1,12 @@
+from datetime import datetime, timezone
 from typing import Optional
 
 import numpy as np
 
-from arxiv_curator.llm.embeddings import cosine_similarity
-from arxiv_curator.models import Feedback
+from arxiv_curator import db
+from arxiv_curator.interests import load_interest_profile, profile_to_text
+from arxiv_curator.llm.embeddings import cosine_similarity, embed_texts
+from arxiv_curator.models import Feedback, Score
 
 DEFAULT_ALPHA = 0.3
 DEFAULT_BETA = 0.3
@@ -67,3 +70,38 @@ def most_similar_liked(
         if sim > best_score:
             best_id, best_score = arxiv_id, sim
     return best_id
+
+
+def rank_papers(conn, interests_path, provider, client) -> list[Score]:
+    profile = load_interest_profile(interests_path)
+    profile_text = profile_to_text(profile)
+    interest_vector = embed_texts([profile_text], client)[0]
+
+    papers = db.list_papers(conn)
+    if not papers:
+        return []
+    abstracts = [p.abstract for p in papers]
+    paper_vectors = embed_texts(abstracts, client)
+    vectors_by_id = {p.arxiv_id: vec for p, vec in zip(papers, paper_vectors)}
+
+    feedback_items = db.list_feedback(conn)
+    liked_ids = {fb.arxiv_id for fb in feedback_items if fb.rating == "up"}
+    liked_vectors_by_id = {aid: vectors_by_id[aid] for aid in liked_ids if aid in vectors_by_id}
+    mean_liked, mean_disliked = compute_centroids(feedback_items, vectors_by_id)
+
+    results = []
+    for paper in papers:
+        vec = vectors_by_id[paper.arxiv_id]
+        similarity, adjustment, final = score_paper(vec, interest_vector, mean_liked, mean_disliked)
+        keywords = overlapping_keywords(paper.abstract, profile.keywords)
+        closest = most_similar_liked(vec, liked_vectors_by_id)
+        signals = {"overlapping_keywords": keywords, "most_similar_liked": closest}
+        explanation = provider.explain(paper, profile_text, signals)
+        score = Score(
+            arxiv_id=paper.arxiv_id, similarity=similarity, feedback_adjustment=adjustment,
+            final_score=final, explanation=explanation,
+            created_at=datetime.now(timezone.utc).isoformat(),
+        )
+        db.upsert_score(conn, score)
+        results.append(score)
+    return results

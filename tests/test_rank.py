@@ -81,3 +81,42 @@ def test_most_similar_liked_picks_closest_vector():
 
 def test_most_similar_liked_with_no_liked_papers_returns_none():
     assert most_similar_liked(np.array([1.0, 0.0]), {}) is None
+
+
+from arxiv_curator import db, rank
+from arxiv_curator.models import Paper
+
+
+class StubExplainer:
+    def explain(self, paper, interest_profile_text, signals):
+        return f"stub explanation for {paper.arxiv_id}"
+
+
+def make_paper(arxiv_id, abstract):
+    return Paper(
+        arxiv_id=arxiv_id, title=f"Title {arxiv_id}", authors="Author",
+        abstract=abstract, categories="cs.AI",
+        published="2026-01-01T00:00:00Z", url=f"https://arxiv.org/abs/{arxiv_id}",
+    )
+
+
+def test_rank_papers_scores_relevant_paper_higher(tmp_path, monkeypatch):
+    conn = db.get_connection(":memory:")
+    db.init_db(conn)
+    db.insert_paper(conn, make_paper("relevant1", "This paper is about transformers and deep learning."))
+    db.insert_paper(conn, make_paper("irrelevant1", "This paper is about gardening tips."))
+
+    interests_path = tmp_path / "interests.yaml"
+    interests_path.write_text("summary: I like transformers and deep learning.\nkeywords:\n  - transformers\n")
+
+    def fake_embed_texts(texts, client):
+        import numpy as np
+        return np.array([[1.0, 0.0] if "transformer" in t.lower() else [0.0, 1.0] for t in texts])
+
+    monkeypatch.setattr(rank, "embed_texts", fake_embed_texts)
+
+    scores = rank.rank_papers(conn, interests_path, StubExplainer(), client=None)
+    scores_by_id = {s.arxiv_id: s for s in scores}
+    assert scores_by_id["relevant1"].final_score > scores_by_id["irrelevant1"].final_score
+    assert "relevant1" in scores_by_id["relevant1"].explanation
+    assert db.get_score(conn, "relevant1") is not None
