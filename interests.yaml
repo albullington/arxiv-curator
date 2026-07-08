@@ -1,0 +1,21 @@
+summary: >
+  I'm interested in agentic recommender systems and practical tooling for
+  building AI systems -- especially papers that introduce genuinely new
+  architectural approaches rather than incremental tweaks, like agent
+  memory built on reconstruction instead of plain retrieval. I prefer
+  papers with real experiments over pure theory.
+topics:
+  - agentic recommender systems
+  - agent architectures
+  - agent memory
+  - AI builder tooling
+  - LLM evaluation
+keywords:
+  - agents
+  - recommender systems
+  - memory
+  - ranking
+  - tool use
+  - evaluation
+liked_examples:
+  - "Memory is Reconstructed, Not Retrieved: Graph Memory for LLM Agents"

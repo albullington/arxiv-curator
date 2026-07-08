@@ -1,0 +1,33 @@
+name: Daily Digest
+
+on:
+  schedule:
+    - cron: "0 13 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Restore database cache
+        uses: actions/cache@v4
+        with:
+          path: data/arxiv_curator.db
+          key: arxiv-curator-db-${{ github.run_id }}
+          restore-keys: |
+            arxiv-curator-db-
+      - run: pip install -e .
+      - run: arxiv-curator run
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      - uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "Daily arXiv digest"
+          file_pattern: "digests/*.md"
