@@ -1,3 +1,4 @@
+from arxiv_curator.llm.retry import with_retries
 from arxiv_curator.models import Paper
 
 DEFAULT_MODEL = "gemini-2.5-flash"
@@ -30,10 +31,14 @@ class GeminiProvider:
 
     def summarize(self, paper: Paper) -> str:
         prompt = build_summarize_prompt(paper)
-        response = self._client.models.generate_content(model=self._model, contents=prompt)
+        response = with_retries(
+            self._client.models.generate_content, model=self._model, contents=prompt
+        )
         return response.text.strip()
 
     def explain(self, paper: Paper, interest_profile_text: str, signals: dict) -> str:
         prompt = build_explain_prompt(paper, interest_profile_text, signals)
-        response = self._client.models.generate_content(model=self._model, contents=prompt)
+        response = with_retries(
+            self._client.models.generate_content, model=self._model, contents=prompt
+        )
         return response.text.strip()

@@ -23,6 +23,7 @@ INTERESTS_PATH = Path("interests.yaml")
 DIGESTS_DIR = Path("digests")
 DEFAULT_CATEGORIES = "cs.AI,cs.LG,cs.CL,stat.ML"
 DEFAULT_DIGEST_WINDOW_DAYS = 2
+DEFAULT_RUN_MAX_NEW_PAPERS = 20
 
 
 def get_conn():
@@ -156,8 +157,8 @@ def run():
     try:
         client = factory.get_client()
         provider = GeminiProvider(client)
-        fetch_module.fetch_and_store(conn, DEFAULT_CATEGORIES.split(","), 100)
-        for paper in db.papers_missing_summary(conn):
+        fetch_module.fetch_and_store(conn, DEFAULT_CATEGORIES.split(","), DEFAULT_RUN_MAX_NEW_PAPERS)
+        for paper in db.papers_missing_summary(conn)[:DEFAULT_RUN_MAX_NEW_PAPERS]:
             text = provider.summarize(paper)
             db.insert_summary(conn, Summary(
                 arxiv_id=paper.arxiv_id, text=text,

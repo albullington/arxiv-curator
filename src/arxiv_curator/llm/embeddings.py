@@ -1,12 +1,14 @@
 import numpy as np
 
+from arxiv_curator.llm.retry import with_retries
+
 EMBEDDING_MODEL = "gemini-embedding-001"
 
 
 def embed_texts(texts: list[str], client) -> np.ndarray:
     if not texts:
         return np.empty((0, 0))
-    result = client.models.embed_content(model=EMBEDDING_MODEL, contents=texts)
+    result = with_retries(client.models.embed_content, model=EMBEDDING_MODEL, contents=texts)
     return np.array([embedding.values for embedding in result.embeddings])
 
 
