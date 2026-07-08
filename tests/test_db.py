@@ -96,3 +96,20 @@ def test_upsert_embedding_replaces_previous():
     db.upsert_embedding(conn, "2601.00001", [0.0, 1.0])
     result = db.get_embeddings(conn, ["2601.00001"])
     assert list(result["2601.00001"]) == [0.0, 1.0]
+
+
+def test_list_papers_since_filters_by_first_seen_at():
+    conn = make_conn()
+    db.insert_paper(conn, make_paper("old1"))
+    db.insert_paper(conn, make_paper("new1"))
+    # Backdate "old1" to simulate it having been fetched before the cutoff window.
+    conn.execute(
+        "UPDATE papers SET first_seen_at = ? WHERE arxiv_id = ?",
+        ("2020-01-01T00:00:00+00:00", "old1"),
+    )
+    conn.commit()
+    cutoff = "2025-01-01T00:00:00+00:00"
+    recent = db.list_papers_since(conn, cutoff)
+    recent_ids = {p.arxiv_id for p in recent}
+    assert "new1" in recent_ids
+    assert "old1" not in recent_ids

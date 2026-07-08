@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import typer
@@ -22,6 +22,7 @@ DB_PATH = Path("data/arxiv_curator.db")
 INTERESTS_PATH = Path("interests.yaml")
 DIGESTS_DIR = Path("digests")
 DEFAULT_CATEGORIES = "cs.AI,cs.LG,cs.CL,stat.ML"
+DEFAULT_DIGEST_WINDOW_DAYS = 2
 
 
 def get_conn():
@@ -103,9 +104,10 @@ def feedback(
 
 
 @app.command()
-def digest(top: int = typer.Option(20)):
+def digest(top: int = typer.Option(20), since_days: int = typer.Option(DEFAULT_DIGEST_WINDOW_DAYS)):
     conn = get_conn()
-    path = digest_module.write_digest(conn, DIGESTS_DIR, top)
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=since_days)).isoformat()
+    path = digest_module.write_digest(conn, DIGESTS_DIR, top, since=cutoff)
     typer.echo(f"Wrote {path}")
 
 
@@ -130,7 +132,8 @@ def run():
             created_at=datetime.now(timezone.utc).isoformat(),
         ))
     rank_module.rank_papers(conn, INTERESTS_PATH, provider, client)
-    path = digest_module.write_digest(conn, DIGESTS_DIR, 20)
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=DEFAULT_DIGEST_WINDOW_DAYS)).isoformat()
+    path = digest_module.write_digest(conn, DIGESTS_DIR, 20, since=cutoff)
     typer.echo(f"Wrote {path}")
 
 

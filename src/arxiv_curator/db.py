@@ -15,7 +15,8 @@ CREATE TABLE IF NOT EXISTS papers (
     abstract TEXT NOT NULL,
     categories TEXT NOT NULL,
     published TEXT NOT NULL,
-    url TEXT NOT NULL
+    url TEXT NOT NULL,
+    first_seen_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS summaries (
@@ -87,9 +88,11 @@ def _row_to_feedback(row) -> Feedback:
 
 def insert_paper(conn, paper: Paper) -> None:
     conn.execute(
-        "INSERT OR IGNORE INTO papers (arxiv_id, title, authors, abstract, categories, published, url) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (paper.arxiv_id, paper.title, paper.authors, paper.abstract, paper.categories, paper.published, paper.url),
+        "INSERT OR IGNORE INTO papers "
+        "(arxiv_id, title, authors, abstract, categories, published, url, first_seen_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (paper.arxiv_id, paper.title, paper.authors, paper.abstract, paper.categories,
+         paper.published, paper.url, datetime.now(timezone.utc).isoformat()),
     )
     conn.commit()
 
@@ -106,6 +109,13 @@ def get_paper(conn, arxiv_id: str) -> Optional[Paper]:
 
 def list_papers(conn) -> list[Paper]:
     rows = conn.execute("SELECT * FROM papers").fetchall()
+    return [_row_to_paper(row) for row in rows]
+
+
+def list_papers_since(conn, cutoff_iso: str) -> list[Paper]:
+    rows = conn.execute(
+        "SELECT * FROM papers WHERE first_seen_at >= ?", (cutoff_iso,)
+    ).fetchall()
     return [_row_to_paper(row) for row in rows]
 
 

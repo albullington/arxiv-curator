@@ -54,3 +54,28 @@ def test_write_digest_creates_dated_and_latest_files(tmp_path):
     latest_path = tmp_path / "latest.md"
     assert latest_path.exists()
     assert latest_path.read_text() == dated_path.read_text()
+
+
+def test_render_digest_with_since_excludes_old_papers():
+    conn = make_seeded_conn()
+    # make_seeded_conn's paper was just inserted, so its first_seen_at is "now" --
+    # backdate it to simulate an old paper outside the recency window.
+    conn.execute(
+        "UPDATE papers SET first_seen_at = ? WHERE arxiv_id = ?",
+        ("2020-01-01T00:00:00+00:00", "2601.00001"),
+    )
+    conn.commit()
+    text = digest.render_digest(conn, top_n=20, since="2025-01-01T00:00:00+00:00")
+    assert "A Great Paper" not in text
+
+
+def test_render_digest_with_since_includes_recent_papers():
+    conn = make_seeded_conn()
+    text = digest.render_digest(conn, top_n=20, since="2020-01-01T00:00:00+00:00")
+    assert "A Great Paper" in text
+
+
+def test_render_digest_without_since_is_unchanged():
+    conn = make_seeded_conn()
+    text = digest.render_digest(conn, top_n=20)
+    assert "A Great Paper" in text
