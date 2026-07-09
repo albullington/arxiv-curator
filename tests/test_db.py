@@ -153,3 +153,14 @@ def test_insert_paper_accepts_manual_source():
     db.insert_paper(conn, make_paper(), source="manual")
     row = conn.execute("SELECT source FROM papers WHERE arxiv_id = ?", ("2601.00001",)).fetchone()
     assert row["source"] == "manual"
+
+
+def test_list_papers_since_excludes_manual_source():
+    conn = make_conn()
+    db.insert_paper(conn, make_paper("fetched1"), source="fetch")
+    db.insert_paper(conn, make_paper("manual1"), source="manual")
+    cutoff = "2000-01-01T00:00:00+00:00"
+    recent = db.list_papers_since(conn, cutoff)
+    recent_ids = {p.arxiv_id for p in recent}
+    assert "fetched1" in recent_ids
+    assert "manual1" not in recent_ids

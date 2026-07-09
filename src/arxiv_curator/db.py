@@ -122,7 +122,7 @@ def list_papers(conn) -> list[Paper]:
 
 def list_papers_since(conn, cutoff_iso: str) -> list[Paper]:
     rows = conn.execute(
-        "SELECT * FROM papers WHERE first_seen_at >= ?", (cutoff_iso,)
+        "SELECT * FROM papers WHERE first_seen_at >= ? AND source != 'manual'", (cutoff_iso,)
     ).fetchall()
     return [_row_to_paper(row) for row in rows]
 
