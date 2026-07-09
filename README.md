@@ -10,12 +10,21 @@ read), explains why each paper matched, and evaluates ranking quality.
     source .venv/bin/activate
     pip install -e ".[dev]"
     cp .env.example .env   # add your GEMINI_API_KEY
+    git clone <your-arxiv-curator-data repo URL> ~/arxiv-curator-data
 
 Edit `interests.yaml` to describe what you actually care about.
+
+By default the database lives in `~/arxiv-curator-data/arxiv_curator.db`,
+a clone of a separate private repo dedicated to your papers, ratings,
+and notes (kept out of this public repo). Override the location with
+`ARXIV_CURATOR_DATA_DIR` in `.env`. Run `arxiv-curator sync` before a
+session to pull down anything the daily CI run added, and after a
+session to push your local adds/ratings so tomorrow's run sees them.
 
 ## Usage
 
     arxiv-curator fetch --categories cs.AI,cs.LG,cs.CL,stat.ML
+    arxiv-curator add <arxiv_id>
     arxiv-curator summarize
     arxiv-curator rank
     arxiv-curator show <arxiv_id>
@@ -23,7 +32,8 @@ Edit `interests.yaml` to describe what you actually care about.
     arxiv-curator feedback <arxiv_id> --pages-read 5 --total-pages 12
     arxiv-curator digest
     arxiv-curator eval
-    arxiv-curator run   # fetch + summarize + rank + digest in one shot
+    arxiv-curator run    # fetch + summarize + rank + digest in one shot
+    arxiv-curator sync   # pull remote changes, push local changes
 
 ## How ranking works
 

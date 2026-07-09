@@ -1,3 +1,4 @@
+import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -10,6 +11,7 @@ from arxiv_curator import eval as eval_module
 from arxiv_curator import feedback as feedback_module
 from arxiv_curator import fetch as fetch_module
 from arxiv_curator import rank as rank_module
+from arxiv_curator import sync as sync_module
 from arxiv_curator.llm import factory
 from arxiv_curator.llm.gemini_provider import GeminiProvider
 from arxiv_curator.models import Summary
@@ -18,7 +20,14 @@ load_dotenv()
 
 app = typer.Typer()
 
-DB_PATH = Path("data/arxiv_curator.db")
+
+def _resolve_data_dir() -> Path:
+    raw = os.environ.get("ARXIV_CURATOR_DATA_DIR", "~/arxiv-curator-data")
+    return Path(raw).expanduser()
+
+
+DATA_DIR = _resolve_data_dir()
+DB_PATH = DATA_DIR / "arxiv_curator.db"
 INTERESTS_PATH = Path("interests.yaml")
 DIGESTS_DIR = Path("digests")
 DEFAULT_CATEGORIES = "cs.AI,cs.LG,cs.CL,stat.ML"
@@ -60,7 +69,7 @@ def add(arxiv_id: str):
     if db.paper_exists(conn, paper.arxiv_id):
         typer.echo(f"Already in your database: {paper.arxiv_id} -- {paper.title}")
         return
-    db.insert_paper(conn, paper)
+    db.insert_paper(conn, paper, source="manual")
     typer.echo(f"Added {paper.arxiv_id}: {paper.title}")
 
 
@@ -129,6 +138,15 @@ def feedback(
         typer.echo(str(exc))
         raise typer.Exit(code=1)
     typer.echo(f"Recorded feedback for {arxiv_id}")
+
+
+@app.command()
+def sync():
+    try:
+        result = sync_module.sync(DATA_DIR)
+    except sync_module.SyncError as exc:
+        _fail(exc)
+    typer.echo(result)
 
 
 @app.command()

@@ -104,3 +104,18 @@ def test_select_digest_scores_respects_since_filter():
     conn.commit()
     scores = digest.select_digest_scores(conn, top_n=20, since="2025-01-01T00:00:00+00:00")
     assert scores == []
+
+
+def test_render_digest_excludes_manual_source_even_if_recent():
+    conn = make_seeded_conn()
+    db.insert_paper(conn, Paper(
+        arxiv_id="2601.00099", title="Manually Added Paper", authors="A", abstract="B",
+        categories="cs.AI", published="2026-01-01T00:00:00Z", url="https://arxiv.org/abs/2601.00099",
+    ), source="manual")
+    db.upsert_score(conn, Score(
+        arxiv_id="2601.00099", similarity=0.99, feedback_adjustment=0.0, final_score=0.99,
+        explanation="Would otherwise rank first.", created_at="t",
+    ))
+    text = digest.render_digest(conn, top_n=20, since="2020-01-01T00:00:00+00:00")
+    assert "Manually Added Paper" not in text
+    assert "A Great Paper" in text

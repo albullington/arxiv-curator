@@ -66,6 +66,6 @@ def fetch_and_store(conn, categories: list[str], max_results: int) -> int:
     new_count = 0
     for paper in papers:
         if not db.paper_exists(conn, paper.arxiv_id):
-            db.insert_paper(conn, paper)
+            db.insert_paper(conn, paper, source="fetch")
             new_count += 1
     return new_count

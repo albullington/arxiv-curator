@@ -253,3 +253,23 @@ def test_explain_papers_only_explains_requested_ids(tmp_path, monkeypatch):
     rank.explain_papers(conn, interests_path, StubExplainer(), client=None, arxiv_ids=["wanted1"])
     assert db.get_score(conn, "wanted1").explanation != ""
     assert db.get_score(conn, "skipped1").explanation == ""
+
+
+def test_rank_papers_includes_manual_source_papers_in_centroid(tmp_path, monkeypatch):
+    conn = db.get_connection(":memory:")
+    db.init_db(conn)
+    db.insert_paper(conn, make_paper("manual1", "This paper is about transformers."), source="manual")
+    db.insert_paper(conn, make_paper("candidate1", "This paper is about transformers too."))
+    db.insert_feedback(conn, Feedback(arxiv_id="manual1", created_at="t", rating="up"))
+
+    interests_path = tmp_path / "interests.yaml"
+    interests_path.write_text("summary: I like transformers.\n")
+
+    def fake_embed_texts(texts, client):
+        return np.array([[1.0, 0.0] for _ in texts])
+
+    monkeypatch.setattr(rank, "embed_texts", fake_embed_texts)
+
+    scores = rank.rank_papers(conn, interests_path, client=None)
+    candidate_score = next(s for s in scores if s.arxiv_id == "candidate1")
+    assert candidate_score.feedback_adjustment > 0
