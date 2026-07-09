@@ -16,7 +16,8 @@ CREATE TABLE IF NOT EXISTS papers (
     categories TEXT NOT NULL,
     published TEXT NOT NULL,
     url TEXT NOT NULL,
-    first_seen_at TEXT NOT NULL
+    first_seen_at TEXT NOT NULL,
+    source TEXT NOT NULL DEFAULT 'fetch'
 );
 
 CREATE TABLE IF NOT EXISTS summaries (
@@ -60,7 +61,14 @@ def get_connection(db_path) -> sqlite3.Connection:
 
 def init_db(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
+    _ensure_source_column(conn)
     conn.commit()
+
+
+def _ensure_source_column(conn: sqlite3.Connection) -> None:
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(papers)")}
+    if "source" not in columns:
+        conn.execute("ALTER TABLE papers ADD COLUMN source TEXT NOT NULL DEFAULT 'fetch'")
 
 
 def _row_to_paper(row) -> Paper:
@@ -86,13 +94,13 @@ def _row_to_feedback(row) -> Feedback:
     )
 
 
-def insert_paper(conn, paper: Paper) -> None:
+def insert_paper(conn, paper: Paper, source: str = "fetch") -> None:
     conn.execute(
         "INSERT OR IGNORE INTO papers "
-        "(arxiv_id, title, authors, abstract, categories, published, url, first_seen_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "(arxiv_id, title, authors, abstract, categories, published, url, first_seen_at, source) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (paper.arxiv_id, paper.title, paper.authors, paper.abstract, paper.categories,
-         paper.published, paper.url, datetime.now(timezone.utc).isoformat()),
+         paper.published, paper.url, datetime.now(timezone.utc).isoformat(), source),
     )
     conn.commit()
 
