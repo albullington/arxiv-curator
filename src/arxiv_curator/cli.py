@@ -1,3 +1,4 @@
+import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -18,7 +19,14 @@ load_dotenv()
 
 app = typer.Typer()
 
-DB_PATH = Path("data/arxiv_curator.db")
+
+def _resolve_data_dir() -> Path:
+    raw = os.environ.get("ARXIV_CURATOR_DATA_DIR", "~/arxiv-curator-data")
+    return Path(raw).expanduser()
+
+
+DATA_DIR = _resolve_data_dir()
+DB_PATH = DATA_DIR / "arxiv_curator.db"
 INTERESTS_PATH = Path("interests.yaml")
 DIGESTS_DIR = Path("digests")
 DEFAULT_CATEGORIES = "cs.AI,cs.LG,cs.CL,stat.ML"

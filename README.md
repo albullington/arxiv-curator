@@ -10,8 +10,16 @@ read), explains why each paper matched, and evaluates ranking quality.
     source .venv/bin/activate
     pip install -e ".[dev]"
     cp .env.example .env   # add your GEMINI_API_KEY
+    git clone <your-arxiv-curator-data repo URL> ~/arxiv-curator-data
 
 Edit `interests.yaml` to describe what you actually care about.
+
+By default the database lives in `~/arxiv-curator-data/arxiv_curator.db`,
+a clone of a separate private repo dedicated to your papers, ratings,
+and notes (kept out of this public repo). Override the location with
+`ARXIV_CURATOR_DATA_DIR` in `.env`. Run `arxiv-curator sync` before a
+session to pull down anything the daily CI run added, and after a
+session to push your local adds/ratings so tomorrow's run sees them.
 
 ## Usage
 

@@ -1,9 +1,21 @@
+from pathlib import Path
+
 from typer.testing import CliRunner
 
 from arxiv_curator import cli, db
 from arxiv_curator.models import Paper
 
 runner = CliRunner()
+
+
+def test_resolve_data_dir_uses_env_var(monkeypatch):
+    monkeypatch.setenv("ARXIV_CURATOR_DATA_DIR", "/tmp/custom-arxiv-data")
+    assert cli._resolve_data_dir() == Path("/tmp/custom-arxiv-data")
+
+
+def test_resolve_data_dir_defaults_to_home_dir(monkeypatch):
+    monkeypatch.delenv("ARXIV_CURATOR_DATA_DIR", raising=False)
+    assert cli._resolve_data_dir() == Path("~/arxiv-curator-data").expanduser()
 
 
 def seed_db(db_path):
