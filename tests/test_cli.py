@@ -174,6 +174,31 @@ def test_add_command_reports_not_found(tmp_path, monkeypatch):
     assert "No such arXiv paper" in result.output
 
 
+def test_add_command_inserts_paper_with_manual_source(tmp_path, monkeypatch):
+    db_path = tmp_path / "test.db"
+    conn = db.get_connection(db_path)
+    db.init_db(conn)
+    conn.close()
+    monkeypatch.setattr(cli, "DB_PATH", db_path)
+
+    fake_paper = Paper(
+        arxiv_id="2606.06036v1", title="Memory is Reconstructed, Not Retrieved",
+        authors="Shuo Ji", abstract="An abstract about agent memory.",
+        categories="cs.AI", published="2026-06-04T00:00:00Z",
+        url="https://arxiv.org/abs/2606.06036v1",
+    )
+    monkeypatch.setattr(cli.fetch_module, "fetch_paper_by_id", lambda arxiv_id: fake_paper)
+
+    result = runner.invoke(cli.app, ["add", "2606.06036"])
+    assert result.exit_code == 0
+
+    conn = db.get_connection(db_path)
+    row = conn.execute(
+        "SELECT source FROM papers WHERE arxiv_id = ?", ("2606.06036v1",)
+    ).fetchone()
+    assert row["source"] == "manual"
+
+
 def test_summarize_command_fails_cleanly_without_api_key(tmp_path, monkeypatch):
     db_path = tmp_path / "test.db"
     seed_db(db_path)

@@ -68,7 +68,7 @@ def add(arxiv_id: str):
     if db.paper_exists(conn, paper.arxiv_id):
         typer.echo(f"Already in your database: {paper.arxiv_id} -- {paper.title}")
         return
-    db.insert_paper(conn, paper)
+    db.insert_paper(conn, paper, source="manual")
     typer.echo(f"Added {paper.arxiv_id}: {paper.title}")
 
 

@@ -104,3 +104,19 @@ def test_fetch_and_store_dedups_existing_papers(monkeypatch):
     new_count = fetch.fetch_and_store(conn, ["cs.AI"], 10)
     assert new_count == 0
     assert len(db.list_papers(conn)) == 1
+
+
+def test_fetch_and_store_inserts_with_fetch_source(monkeypatch):
+    conn = db.get_connection(":memory:")
+    db.init_db(conn)
+
+    def fake_fetch_papers(categories, max_results):
+        return fetch.parse_feed(SAMPLE_FEED)
+
+    monkeypatch.setattr(fetch, "fetch_papers", fake_fetch_papers)
+    fetch.fetch_and_store(conn, ["cs.AI"], 10)
+
+    row = conn.execute(
+        "SELECT source FROM papers WHERE arxiv_id = ?", ("2601.00001v1",)
+    ).fetchone()
+    assert row["source"] == "fetch"
