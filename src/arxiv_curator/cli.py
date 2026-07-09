@@ -5,6 +5,7 @@ from pathlib import Path
 import typer
 from dotenv import load_dotenv
 
+from arxiv_curator import agent_pick as agent_pick_module
 from arxiv_curator import db
 from arxiv_curator import digest as digest_module
 from arxiv_curator import eval as eval_module
@@ -155,6 +156,22 @@ def digest(top: int = typer.Option(DEFAULT_DIGEST_TOP_N), since_days: int = type
     cutoff = (datetime.now(timezone.utc) - timedelta(days=since_days)).isoformat()
     path = digest_module.write_digest(conn, DIGESTS_DIR, top, since=cutoff)
     typer.echo(f"Wrote {path}")
+
+
+@app.command(name="agent-pick")
+def agent_pick_cmd():
+    conn = get_conn()
+    try:
+        client = factory.get_client()
+        decisions = agent_pick_module.run_agent_pick(conn, client)
+    except Exception as exc:
+        _fail(exc)
+    picked = [d for d in decisions if d.status == "picked"]
+    path = agent_pick_module.write_agent_pick_digest(conn, DIGESTS_DIR, picked)
+    if picked:
+        typer.echo(f"Wrote {path}")
+    else:
+        typer.echo(f"Wrote {path} (nothing cleared the bar this run)")
 
 
 @app.command(name="eval")

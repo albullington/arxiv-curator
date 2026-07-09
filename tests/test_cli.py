@@ -288,3 +288,52 @@ def test_sync_command_fails_cleanly_on_sync_error(tmp_path, monkeypatch):
     result = runner.invoke(cli.app, ["sync"])
     assert result.exit_code == 1
     assert "push rejected" in result.output
+
+
+def test_agent_pick_command_writes_digest_with_picks(tmp_path, monkeypatch):
+    from arxiv_curator.models import AgentPickDecision
+
+    db_path = tmp_path / "test.db"
+    seed_db(db_path)
+    monkeypatch.setattr(cli, "DB_PATH", db_path)
+    digests_dir = tmp_path / "digests"
+    monkeypatch.setattr(cli, "DIGESTS_DIR", digests_dir)
+    monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
+    monkeypatch.setattr(cli.factory, "get_client", lambda: "fake-client")
+    monkeypatch.setattr(
+        cli.agent_pick_module, "run_agent_pick",
+        lambda conn, client: [
+            AgentPickDecision(arxiv_id="2601.00001", status="picked", reasoning="great fit", decided_at="t"),
+        ],
+    )
+
+    result = runner.invoke(cli.app, ["agent-pick"])
+    assert result.exit_code == 0
+    assert (digests_dir / "agent-pick-latest.md").exists()
+    assert "great fit" in (digests_dir / "agent-pick-latest.md").read_text()
+
+
+def test_agent_pick_command_reports_when_nothing_clears_bar(tmp_path, monkeypatch):
+    db_path = tmp_path / "test.db"
+    seed_db(db_path)
+    monkeypatch.setattr(cli, "DB_PATH", db_path)
+    digests_dir = tmp_path / "digests"
+    monkeypatch.setattr(cli, "DIGESTS_DIR", digests_dir)
+    monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
+    monkeypatch.setattr(cli.factory, "get_client", lambda: "fake-client")
+    monkeypatch.setattr(cli.agent_pick_module, "run_agent_pick", lambda conn, client: [])
+
+    result = runner.invoke(cli.app, ["agent-pick"])
+    assert result.exit_code == 0
+    assert "nothing cleared the bar" in result.output
+
+
+def test_agent_pick_command_fails_cleanly_without_api_key(tmp_path, monkeypatch):
+    db_path = tmp_path / "test.db"
+    seed_db(db_path)
+    monkeypatch.setattr(cli, "DB_PATH", db_path)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+
+    result = runner.invoke(cli.app, ["agent-pick"])
+    assert result.exit_code == 1
+    assert "GEMINI_API_KEY" in result.output
