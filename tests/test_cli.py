@@ -49,6 +49,45 @@ def test_show_command_prints_title_and_abstract(tmp_path, monkeypatch):
     assert "A Great Paper" in result.output
 
 
+def test_show_command_omits_explanation_when_not_yet_generated(tmp_path, monkeypatch):
+    from arxiv_curator.models import Score
+
+    db_path = tmp_path / "test.db"
+    seed_db(db_path)
+    monkeypatch.setattr(cli, "DB_PATH", db_path)
+
+    conn = db.get_connection(db_path)
+    db.upsert_score(conn, Score(
+        arxiv_id="2601.00001", similarity=0.5, feedback_adjustment=0.0,
+        final_score=0.5, explanation="", created_at="t",
+    ))
+    conn.close()
+
+    result = runner.invoke(cli.app, ["show", "2601.00001"])
+    assert result.exit_code == 0
+    assert "Score: 0.500" in result.output
+    assert "Why this matches" not in result.output
+
+
+def test_show_command_prints_explanation_when_present(tmp_path, monkeypatch):
+    from arxiv_curator.models import Score
+
+    db_path = tmp_path / "test.db"
+    seed_db(db_path)
+    monkeypatch.setattr(cli, "DB_PATH", db_path)
+
+    conn = db.get_connection(db_path)
+    db.upsert_score(conn, Score(
+        arxiv_id="2601.00001", similarity=0.5, feedback_adjustment=0.0,
+        final_score=0.5, explanation="Matches your interests.", created_at="t",
+    ))
+    conn.close()
+
+    result = runner.invoke(cli.app, ["show", "2601.00001"])
+    assert result.exit_code == 0
+    assert "Why this matches: Matches your interests." in result.output
+
+
 def test_digest_command_writes_file(tmp_path, monkeypatch):
     db_path = tmp_path / "test.db"
     seed_db(db_path)
@@ -157,7 +196,7 @@ def test_run_command_only_summarizes_papers_that_make_the_digest(tmp_path, monke
     monkeypatch.setattr(cli.factory, "get_client", lambda: "fake-client")
     monkeypatch.setattr(cli.fetch_module, "fetch_and_store", lambda *a, **k: 0)
 
-    def fake_rank_papers(conn, interests_path, provider, client):
+    def fake_rank_papers(conn, interests_path, client):
         db.upsert_score(conn, Score(
             arxiv_id="2601.00001", similarity=0.9, feedback_adjustment=0.0,
             final_score=0.9, explanation="Top match.", created_at="t",
@@ -169,6 +208,7 @@ def test_run_command_only_summarizes_papers_that_make_the_digest(tmp_path, monke
         return []
 
     monkeypatch.setattr(cli.rank_module, "rank_papers", fake_rank_papers)
+    monkeypatch.setattr(cli.rank_module, "explain_papers", lambda *a, **k: None)
 
     summarized_ids = []
 

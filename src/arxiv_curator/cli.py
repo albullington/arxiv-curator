@@ -86,8 +86,7 @@ def rank(top: int = typer.Option(20)):
     conn = get_conn()
     try:
         client = factory.get_client()
-        provider = GeminiProvider(client)
-        scores = rank_module.rank_papers(conn, INTERESTS_PATH, provider, client)
+        scores = rank_module.rank_papers(conn, INTERESTS_PATH, client)
     except Exception as exc:
         _fail(exc)
     scores.sort(key=lambda s: s.final_score, reverse=True)
@@ -108,7 +107,8 @@ def show(arxiv_id: str):
     typer.echo(summary.text if summary else paper.abstract)
     if score is not None:
         typer.echo(f"\nScore: {score.final_score:.3f}")
-        typer.echo(f"Why this matches: {score.explanation}")
+        if score.explanation:
+            typer.echo(f"Why this matches: {score.explanation}")
 
 
 @app.command()
@@ -175,8 +175,12 @@ def run():
         client = factory.get_client()
         provider = GeminiProvider(client)
         fetch_module.fetch_and_store(conn, DEFAULT_CATEGORIES.split(","), DEFAULT_RUN_MAX_NEW_PAPERS)
-        rank_module.rank_papers(conn, INTERESTS_PATH, provider, client)
-        for score in digest_module.select_digest_scores(conn, DEFAULT_DIGEST_TOP_N, since=cutoff):
+        rank_module.rank_papers(conn, INTERESTS_PATH, client)
+        top_scores = digest_module.select_digest_scores(conn, DEFAULT_DIGEST_TOP_N, since=cutoff)
+        rank_module.explain_papers(
+            conn, INTERESTS_PATH, provider, client, [s.arxiv_id for s in top_scores]
+        )
+        for score in top_scores:
             paper = db.get_paper(conn, score.arxiv_id)
             if db.get_summary(conn, paper.arxiv_id) is None:
                 text = provider.summarize(paper)

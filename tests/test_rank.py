@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from arxiv_curator.models import Feedback
+from arxiv_curator.models import Feedback, Score
 from arxiv_curator.rank import (
     feedback_weight, compute_centroids, score_paper,
     overlapping_keywords, most_similar_liked,
@@ -115,11 +115,48 @@ def test_rank_papers_scores_relevant_paper_higher(tmp_path, monkeypatch):
 
     monkeypatch.setattr(rank, "embed_texts", fake_embed_texts)
 
-    scores = rank.rank_papers(conn, interests_path, StubExplainer(), client=None)
+    scores = rank.rank_papers(conn, interests_path, client=None)
     scores_by_id = {s.arxiv_id: s for s in scores}
     assert scores_by_id["relevant1"].final_score > scores_by_id["irrelevant1"].final_score
-    assert "relevant1" in scores_by_id["relevant1"].explanation
     assert db.get_score(conn, "relevant1") is not None
+
+
+def test_rank_papers_leaves_explanation_empty_for_new_papers(tmp_path, monkeypatch):
+    conn = db.get_connection(":memory:")
+    db.init_db(conn)
+    db.insert_paper(conn, make_paper("new1", "This paper is about transformers."))
+
+    interests_path = tmp_path / "interests.yaml"
+    interests_path.write_text("summary: I like transformers.\n")
+
+    def fake_embed_texts(texts, client):
+        return np.array([[1.0, 0.0] for _ in texts])
+
+    monkeypatch.setattr(rank, "embed_texts", fake_embed_texts)
+
+    rank.rank_papers(conn, interests_path, client=None)
+    assert db.get_score(conn, "new1").explanation == ""
+
+
+def test_rank_papers_preserves_existing_explanation_on_rerank(tmp_path, monkeypatch):
+    conn = db.get_connection(":memory:")
+    db.init_db(conn)
+    db.insert_paper(conn, make_paper("cached1", "This paper is about transformers."))
+    db.upsert_score(conn, Score(
+        arxiv_id="cached1", similarity=0.5, feedback_adjustment=0.0, final_score=0.5,
+        explanation="A real explanation.", created_at="t",
+    ))
+
+    interests_path = tmp_path / "interests.yaml"
+    interests_path.write_text("summary: I like transformers.\n")
+
+    def fake_embed_texts(texts, client):
+        return np.array([[1.0, 0.0] for _ in texts])
+
+    monkeypatch.setattr(rank, "embed_texts", fake_embed_texts)
+
+    rank.rank_papers(conn, interests_path, client=None)
+    assert db.get_score(conn, "cached1").explanation == "A real explanation."
 
 
 def test_get_paper_vectors_only_embeds_missing_papers(monkeypatch):
@@ -147,10 +184,10 @@ def test_get_paper_vectors_only_embeds_missing_papers(monkeypatch):
     assert list(db.get_embeddings(conn, ["fresh1"])["fresh1"]) == [0.0, 1.0]
 
 
-def test_rank_papers_reuses_existing_explanation_on_rerank(tmp_path, monkeypatch):
+def test_explain_papers_generates_explanation_for_scored_paper(tmp_path, monkeypatch):
     conn = db.get_connection(":memory:")
     db.init_db(conn)
-    db.insert_paper(conn, make_paper("cached1", "This paper is about transformers."))
+    db.insert_paper(conn, make_paper("paper1", "This paper is about transformers."))
 
     interests_path = tmp_path / "interests.yaml"
     interests_path.write_text("summary: I like transformers.\n")
@@ -159,30 +196,17 @@ def test_rank_papers_reuses_existing_explanation_on_rerank(tmp_path, monkeypatch
         return np.array([[1.0, 0.0] for _ in texts])
 
     monkeypatch.setattr(rank, "embed_texts", fake_embed_texts)
+    rank.rank_papers(conn, interests_path, client=None)
+    assert db.get_score(conn, "paper1").explanation == ""
 
-    class CountingExplainer:
-        def __init__(self):
-            self.calls = 0
-
-        def explain(self, paper, interest_profile_text, signals):
-            self.calls += 1
-            return f"explanation #{self.calls} for {paper.arxiv_id}"
-
-    explainer = CountingExplainer()
-
-    rank.rank_papers(conn, interests_path, explainer, client=None)
-    assert explainer.calls == 1
-    first_explanation = db.get_score(conn, "cached1").explanation
-
-    rank.rank_papers(conn, interests_path, explainer, client=None)
-    assert explainer.calls == 1
-    assert db.get_score(conn, "cached1").explanation == first_explanation
+    rank.explain_papers(conn, interests_path, StubExplainer(), client=None, arxiv_ids=["paper1"])
+    assert "paper1" in db.get_score(conn, "paper1").explanation
 
 
-def test_rank_papers_explains_only_newly_added_papers(tmp_path, monkeypatch):
+def test_explain_papers_skips_papers_that_already_have_an_explanation(tmp_path, monkeypatch):
     conn = db.get_connection(":memory:")
     db.init_db(conn)
-    db.insert_paper(conn, make_paper("old1", "This paper is about transformers."))
+    db.insert_paper(conn, make_paper("paper1", "This paper is about transformers."))
 
     interests_path = tmp_path / "interests.yaml"
     interests_path.write_text("summary: I like transformers.\n")
@@ -191,6 +215,7 @@ def test_rank_papers_explains_only_newly_added_papers(tmp_path, monkeypatch):
         return np.array([[1.0, 0.0] for _ in texts])
 
     monkeypatch.setattr(rank, "embed_texts", fake_embed_texts)
+    rank.rank_papers(conn, interests_path, client=None)
 
     class CountingExplainer:
         def __init__(self):
@@ -201,9 +226,30 @@ def test_rank_papers_explains_only_newly_added_papers(tmp_path, monkeypatch):
             return f"explanation #{self.calls}"
 
     explainer = CountingExplainer()
-    rank.rank_papers(conn, interests_path, explainer, client=None)
+    rank.explain_papers(conn, interests_path, explainer, client=None, arxiv_ids=["paper1"])
     assert explainer.calls == 1
+    first_explanation = db.get_score(conn, "paper1").explanation
 
-    db.insert_paper(conn, make_paper("new1", "Another transformers paper."))
-    rank.rank_papers(conn, interests_path, explainer, client=None)
-    assert explainer.calls == 2
+    rank.explain_papers(conn, interests_path, explainer, client=None, arxiv_ids=["paper1"])
+    assert explainer.calls == 1
+    assert db.get_score(conn, "paper1").explanation == first_explanation
+
+
+def test_explain_papers_only_explains_requested_ids(tmp_path, monkeypatch):
+    conn = db.get_connection(":memory:")
+    db.init_db(conn)
+    db.insert_paper(conn, make_paper("wanted1", "This paper is about transformers."))
+    db.insert_paper(conn, make_paper("skipped1", "Another transformers paper."))
+
+    interests_path = tmp_path / "interests.yaml"
+    interests_path.write_text("summary: I like transformers.\n")
+
+    def fake_embed_texts(texts, client):
+        return np.array([[1.0, 0.0] for _ in texts])
+
+    monkeypatch.setattr(rank, "embed_texts", fake_embed_texts)
+    rank.rank_papers(conn, interests_path, client=None)
+
+    rank.explain_papers(conn, interests_path, StubExplainer(), client=None, arxiv_ids=["wanted1"])
+    assert db.get_score(conn, "wanted1").explanation != ""
+    assert db.get_score(conn, "skipped1").explanation == ""

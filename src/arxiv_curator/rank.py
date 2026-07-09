@@ -84,7 +84,14 @@ def most_similar_liked(
     return best_id
 
 
-def rank_papers(conn, interests_path, provider, client) -> list[Score]:
+def rank_papers(conn, interests_path, client) -> list[Score]:
+    """Score every paper against the interest profile and feedback centroid.
+
+    Does not generate "why this matches" explanations -- those are expensive
+    LLM calls that only matter for papers a caller actually intends to show
+    (e.g. the digest's top N). Use explain_papers for that, once the set of
+    papers worth explaining is known.
+    """
     profile = load_interest_profile(interests_path)
     profile_text = profile_to_text(profile)
     interest_vector = embed_texts([profile_text], client)[0]
@@ -95,8 +102,6 @@ def rank_papers(conn, interests_path, provider, client) -> list[Score]:
     vectors_by_id = get_paper_vectors(conn, papers, client)
 
     feedback_items = db.list_feedback(conn)
-    liked_ids = {fb.arxiv_id for fb in feedback_items if fb.rating == "up"}
-    liked_vectors_by_id = {aid: vectors_by_id[aid] for aid in liked_ids if aid in vectors_by_id}
     mean_liked, mean_disliked = compute_centroids(feedback_items, vectors_by_id)
 
     results = []
@@ -104,13 +109,7 @@ def rank_papers(conn, interests_path, provider, client) -> list[Score]:
         vec = vectors_by_id[paper.arxiv_id]
         similarity, adjustment, final = score_paper(vec, interest_vector, mean_liked, mean_disliked)
         existing_score = db.get_score(conn, paper.arxiv_id)
-        if existing_score is not None:
-            explanation = existing_score.explanation
-        else:
-            keywords = overlapping_keywords(paper.abstract, profile.keywords)
-            closest = most_similar_liked(vec, liked_vectors_by_id)
-            signals = {"overlapping_keywords": keywords, "most_similar_liked": closest}
-            explanation = provider.explain(paper, profile_text, signals)
+        explanation = existing_score.explanation if existing_score is not None else ""
         score = Score(
             arxiv_id=paper.arxiv_id, similarity=similarity, feedback_adjustment=adjustment,
             final_score=final, explanation=explanation,
@@ -119,3 +118,41 @@ def rank_papers(conn, interests_path, provider, client) -> list[Score]:
         db.upsert_score(conn, score)
         results.append(score)
     return results
+
+
+def explain_papers(conn, interests_path, provider, client, arxiv_ids: list[str]) -> None:
+    """Generate and persist "why this matches" explanations for already-scored
+    papers, skipping any that already have one. Requires rank_papers to have
+    run first so a score exists for each id.
+    """
+    pending_ids = [
+        aid for aid in arxiv_ids
+        if (existing := db.get_score(conn, aid)) is not None and not existing.explanation
+    ]
+    if not pending_ids:
+        return
+
+    profile = load_interest_profile(interests_path)
+    profile_text = profile_to_text(profile)
+
+    papers_by_id = {p.arxiv_id: p for p in db.list_papers(conn) if p.arxiv_id in pending_ids}
+    vectors_by_id = get_paper_vectors(conn, list(papers_by_id.values()), client)
+
+    feedback_items = db.list_feedback(conn)
+    liked_ids = [fb.arxiv_id for fb in feedback_items if fb.rating == "up"]
+    liked_vectors_by_id = db.get_embeddings(conn, liked_ids)
+
+    for arxiv_id in pending_ids:
+        paper = papers_by_id[arxiv_id]
+        vec = vectors_by_id[arxiv_id]
+        keywords = overlapping_keywords(paper.abstract, profile.keywords)
+        closest = most_similar_liked(vec, liked_vectors_by_id)
+        signals = {"overlapping_keywords": keywords, "most_similar_liked": closest}
+        explanation = provider.explain(paper, profile_text, signals)
+
+        existing = db.get_score(conn, arxiv_id)
+        db.upsert_score(conn, Score(
+            arxiv_id=existing.arxiv_id, similarity=existing.similarity,
+            feedback_adjustment=existing.feedback_adjustment, final_score=existing.final_score,
+            explanation=explanation, created_at=existing.created_at,
+        ))
