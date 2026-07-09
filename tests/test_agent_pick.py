@@ -1,7 +1,7 @@
 import numpy as np
 
 from arxiv_curator import agent_pick, db, rank
-from arxiv_curator.models import AgentPickDecision, Paper
+from arxiv_curator.models import AgentPickDecision, Feedback, Paper, Summary
 
 
 def make_paper(arxiv_id, abstract):
@@ -83,3 +83,114 @@ def test_build_shortlist_excludes_rejected_papers(monkeypatch):
     monkeypatch.setattr(rank, "embed_texts", fake_embed_texts)
     shortlist, _ = agent_pick.build_shortlist(conn, client=None, criteria_text="agents", limit=10)
     assert shortlist == []
+
+
+def test_get_paper_detail_returns_full_fields():
+    conn = make_conn()
+    db.insert_paper(conn, make_paper("p1", "An abstract about agents."))
+    db.insert_summary(conn, Summary(arxiv_id="p1", text="A short summary.", created_at="t"))
+
+    detail = agent_pick.get_paper_detail(conn, "p1")
+    assert detail["title"] == "Title p1"
+    assert detail["summary"] == "A short summary."
+
+
+def test_get_paper_detail_summary_is_none_when_missing():
+    conn = make_conn()
+    db.insert_paper(conn, make_paper("p1", "An abstract."))
+    detail = agent_pick.get_paper_detail(conn, "p1")
+    assert detail["summary"] is None
+
+
+def test_get_paper_detail_returns_error_for_unknown_paper():
+    conn = make_conn()
+    detail = agent_pick.get_paper_detail(conn, "unknown1")
+    assert "error" in detail
+
+
+def test_get_feedback_history_returns_top_k_most_similar_rated_papers():
+    conn = make_conn()
+    for arxiv_id in ["candidate1", "close1", "close2", "far1"]:
+        db.insert_paper(conn, make_paper(arxiv_id, "abstract"))
+    db.upsert_embedding(conn, "candidate1", [1.0, 0.0])
+    db.upsert_embedding(conn, "close1", [0.9, 0.1])
+    db.upsert_embedding(conn, "close2", [0.8, 0.2])
+    db.upsert_embedding(conn, "far1", [0.0, 1.0])
+    db.insert_feedback(conn, Feedback(arxiv_id="close1", created_at="t", rating="up", note="loved it"))
+    db.insert_feedback(conn, Feedback(arxiv_id="close2", created_at="t", rating="down"))
+    db.insert_feedback(conn, Feedback(arxiv_id="far1", created_at="t", rating="up"))
+
+    result = agent_pick.get_feedback_history(conn, client=None, arxiv_id="candidate1", top_k=2)
+    ids = [entry["arxiv_id"] for entry in result["similar_rated_papers"]]
+    assert ids == ["close1", "close2"]
+    assert result["similar_rated_papers"][0]["note"] == "loved it"
+
+
+def test_get_feedback_history_excludes_unrated_feedback():
+    conn = make_conn()
+    db.insert_paper(conn, make_paper("candidate1", "abstract"))
+    db.insert_paper(conn, make_paper("note_only1", "abstract"))
+    db.upsert_embedding(conn, "candidate1", [1.0, 0.0])
+    db.upsert_embedding(conn, "note_only1", [1.0, 0.0])
+    db.insert_feedback(conn, Feedback(arxiv_id="note_only1", created_at="t", note="read half of it"))
+
+    result = agent_pick.get_feedback_history(conn, client=None, arxiv_id="candidate1")
+    assert result["similar_rated_papers"] == []
+
+
+def test_get_feedback_history_returns_empty_when_candidate_has_no_embedding():
+    conn = make_conn()
+    db.insert_paper(conn, make_paper("candidate1", "abstract"))
+    result = agent_pick.get_feedback_history(conn, client=None, arxiv_id="candidate1")
+    assert result["similar_rated_papers"] == []
+
+
+def test_validate_decisions_accepts_full_valid_coverage():
+    decisions = [
+        {"arxiv_id": "p1", "status": "picked", "reasoning": "great fit"},
+        {"arxiv_id": "p2", "status": "held", "reasoning": "borderline"},
+    ]
+    result = agent_pick.validate_decisions({"p1", "p2"}, decisions)
+    assert result == decisions
+
+
+def test_validate_decisions_rejects_unknown_arxiv_id():
+    import pytest
+    with pytest.raises(agent_pick.InvalidFinalizePayload, match="not in the shortlist"):
+        agent_pick.validate_decisions({"p1"}, [{"arxiv_id": "unknown1", "status": "picked", "reasoning": "x"}])
+
+
+def test_validate_decisions_rejects_missing_coverage():
+    import pytest
+    with pytest.raises(agent_pick.InvalidFinalizePayload, match="missing decisions"):
+        agent_pick.validate_decisions({"p1", "p2"}, [{"arxiv_id": "p1", "status": "held", "reasoning": "x"}])
+
+
+def test_validate_decisions_rejects_too_many_picks():
+    import pytest
+    ids = {f"p{i}" for i in range(4)}
+    decisions = [{"arxiv_id": f"p{i}", "status": "picked", "reasoning": "x"} for i in range(4)]
+    with pytest.raises(agent_pick.InvalidFinalizePayload, match="max is 3"):
+        agent_pick.validate_decisions(ids, decisions)
+
+
+def test_validate_decisions_rejects_invalid_status():
+    import pytest
+    with pytest.raises(agent_pick.InvalidFinalizePayload, match="invalid status"):
+        agent_pick.validate_decisions({"p1"}, [{"arxiv_id": "p1", "status": "maybe", "reasoning": "x"}])
+
+
+def test_validate_decisions_rejects_missing_reasoning():
+    import pytest
+    with pytest.raises(agent_pick.InvalidFinalizePayload, match="missing reasoning"):
+        agent_pick.validate_decisions({"p1"}, [{"arxiv_id": "p1", "status": "held", "reasoning": ""}])
+
+
+def test_validate_decisions_rejects_duplicate_decision_for_same_paper():
+    import pytest
+    decisions = [
+        {"arxiv_id": "p1", "status": "held", "reasoning": "x"},
+        {"arxiv_id": "p1", "status": "rejected", "reasoning": "y"},
+    ]
+    with pytest.raises(agent_pick.InvalidFinalizePayload, match="duplicate"):
+        agent_pick.validate_decisions({"p1"}, decisions)
