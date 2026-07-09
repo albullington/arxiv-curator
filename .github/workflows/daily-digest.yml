@@ -2,7 +2,12 @@ name: Daily Digest
 
 on:
   schedule:
-    - cron: "0 13 * * *"
+    # 00:07 Pacific Time (UTC-7 during PDT; drifts to 23:07 PT during PST --
+    # GitHub Actions cron has no DST awareness, and this repo doesn't need
+    # split-hair precision on when exactly midnight PT falls). Deliberately
+    # not on the hour: GitHub's scheduler sees its heaviest load right at
+    # the top of every hour, which can delay or drop runs.
+    - cron: "7 7 * * *"
   workflow_dispatch:
 
 permissions:
