@@ -1,7 +1,7 @@
 from arxiv_curator.llm.retry import with_retries
 from arxiv_curator.models import Paper
 
-DEFAULT_MODEL = "gemini-2.5-flash"
+DEFAULT_MODEL = "gemini-flash-latest"
 
 
 def build_summarize_prompt(paper: Paper) -> str:
