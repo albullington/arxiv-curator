@@ -113,3 +113,54 @@ def test_list_papers_since_filters_by_first_seen_at():
     recent_ids = {p.arxiv_id for p in recent}
     assert "new1" in recent_ids
     assert "old1" not in recent_ids
+
+
+def test_init_db_adds_source_column_to_pre_existing_papers_table():
+    conn = db.get_connection(":memory:")
+    conn.execute("""
+        CREATE TABLE papers (
+            arxiv_id TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            authors TEXT NOT NULL,
+            abstract TEXT NOT NULL,
+            categories TEXT NOT NULL,
+            published TEXT NOT NULL,
+            url TEXT NOT NULL,
+            first_seen_at TEXT NOT NULL
+        )
+    """)
+    conn.execute(
+        "INSERT INTO papers (arxiv_id, title, authors, abstract, categories, published, url, first_seen_at) "
+        "VALUES ('legacy1', 'T', 'A', 'B', 'cs.AI', 'p', 'u', 'f')"
+    )
+    conn.commit()
+
+    db.init_db(conn)
+
+    row = conn.execute("SELECT source FROM papers WHERE arxiv_id = 'legacy1'").fetchone()
+    assert row["source"] == "fetch"
+
+
+def test_insert_paper_defaults_to_fetch_source():
+    conn = make_conn()
+    db.insert_paper(conn, make_paper())
+    row = conn.execute("SELECT source FROM papers WHERE arxiv_id = ?", ("2601.00001",)).fetchone()
+    assert row["source"] == "fetch"
+
+
+def test_insert_paper_accepts_manual_source():
+    conn = make_conn()
+    db.insert_paper(conn, make_paper(), source="manual")
+    row = conn.execute("SELECT source FROM papers WHERE arxiv_id = ?", ("2601.00001",)).fetchone()
+    assert row["source"] == "manual"
+
+
+def test_list_papers_since_excludes_manual_source():
+    conn = make_conn()
+    db.insert_paper(conn, make_paper("fetched1"), source="fetch")
+    db.insert_paper(conn, make_paper("manual1"), source="manual")
+    cutoff = "2000-01-01T00:00:00+00:00"
+    recent = db.list_papers_since(conn, cutoff)
+    recent_ids = {p.arxiv_id for p in recent}
+    assert "fetched1" in recent_ids
+    assert "manual1" not in recent_ids
