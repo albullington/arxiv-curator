@@ -11,6 +11,7 @@ from arxiv_curator import eval as eval_module
 from arxiv_curator import feedback as feedback_module
 from arxiv_curator import fetch as fetch_module
 from arxiv_curator import rank as rank_module
+from arxiv_curator import sync as sync_module
 from arxiv_curator.llm import factory
 from arxiv_curator.llm.gemini_provider import GeminiProvider
 from arxiv_curator.models import Summary
@@ -137,6 +138,15 @@ def feedback(
         typer.echo(str(exc))
         raise typer.Exit(code=1)
     typer.echo(f"Recorded feedback for {arxiv_id}")
+
+
+@app.command()
+def sync():
+    try:
+        result = sync_module.sync(DATA_DIR)
+    except sync_module.SyncError as exc:
+        _fail(exc)
+    typer.echo(result)
 
 
 @app.command()

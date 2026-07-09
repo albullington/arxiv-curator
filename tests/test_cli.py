@@ -266,3 +266,25 @@ def test_run_command_only_summarizes_papers_that_make_the_digest(tmp_path, monke
     conn = db.get_connection(db_path)
     assert db.get_summary(conn, "2601.00001") is not None
     assert db.get_summary(conn, "2601.00002") is None
+
+
+def test_sync_command_reports_result(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(cli.sync_module, "sync", lambda data_dir: "up-to-date")
+
+    result = runner.invoke(cli.app, ["sync"])
+    assert result.exit_code == 0
+    assert "up-to-date" in result.output
+
+
+def test_sync_command_fails_cleanly_on_sync_error(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, "DATA_DIR", tmp_path)
+
+    def raise_sync_error(data_dir):
+        raise cli.sync_module.SyncError("push rejected -- re-run sync")
+
+    monkeypatch.setattr(cli.sync_module, "sync", raise_sync_error)
+
+    result = runner.invoke(cli.app, ["sync"])
+    assert result.exit_code == 1
+    assert "push rejected" in result.output
