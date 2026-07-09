@@ -17,6 +17,8 @@ def record_feedback(
 ) -> None:
     if not db.paper_exists(conn, arxiv_id):
         raise ValueError(f"No such paper: {arxiv_id}")
+    if rating is None and note is None and pages_read is None:
+        raise ValueError("Must provide at least one of rating, note, or pages_read")
     if rating is not None and rating not in VALID_RATINGS:
         raise ValueError(f"rating must be one of {VALID_RATINGS}, got {rating!r}")
     if pages_read is not None and total_pages is not None and pages_read > total_pages:

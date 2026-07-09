@@ -134,3 +134,58 @@ def test_summarize_command_fails_cleanly_without_api_key(tmp_path, monkeypatch):
     assert result.exit_code == 1
     assert "GEMINI_API_KEY" in result.output
     assert not isinstance(result.exception, RuntimeError)
+
+
+def test_run_command_only_summarizes_papers_that_make_the_digest(tmp_path, monkeypatch):
+    from arxiv_curator.models import Score
+
+    db_path = tmp_path / "test.db"
+    conn = db.get_connection(db_path)
+    db.init_db(conn)
+    for arxiv_id, title in [("2601.00001", "Top Paper"), ("2601.00002", "Bottom Paper")]:
+        db.insert_paper(conn, Paper(
+            arxiv_id=arxiv_id, title=title, authors="A", abstract="B",
+            categories="cs.AI", published="2026-01-01T00:00:00Z",
+            url=f"https://arxiv.org/abs/{arxiv_id}",
+        ))
+    conn.close()
+
+    monkeypatch.setattr(cli, "DB_PATH", db_path)
+    monkeypatch.setattr(cli, "DIGESTS_DIR", tmp_path / "digests")
+    monkeypatch.setattr(cli, "DEFAULT_DIGEST_TOP_N", 1)
+    monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
+    monkeypatch.setattr(cli.factory, "get_client", lambda: "fake-client")
+    monkeypatch.setattr(cli.fetch_module, "fetch_and_store", lambda *a, **k: 0)
+
+    def fake_rank_papers(conn, interests_path, provider, client):
+        db.upsert_score(conn, Score(
+            arxiv_id="2601.00001", similarity=0.9, feedback_adjustment=0.0,
+            final_score=0.9, explanation="Top match.", created_at="t",
+        ))
+        db.upsert_score(conn, Score(
+            arxiv_id="2601.00002", similarity=0.1, feedback_adjustment=0.0,
+            final_score=0.1, explanation="Weak match.", created_at="t",
+        ))
+        return []
+
+    monkeypatch.setattr(cli.rank_module, "rank_papers", fake_rank_papers)
+
+    summarized_ids = []
+
+    class FakeProvider:
+        def __init__(self, client):
+            pass
+
+        def summarize(self, paper):
+            summarized_ids.append(paper.arxiv_id)
+            return f"Summary of {paper.arxiv_id}"
+
+    monkeypatch.setattr(cli, "GeminiProvider", FakeProvider)
+
+    result = runner.invoke(cli.app, ["run"])
+    assert result.exit_code == 0
+    assert summarized_ids == ["2601.00001"]
+
+    conn = db.get_connection(db_path)
+    assert db.get_summary(conn, "2601.00001") is not None
+    assert db.get_summary(conn, "2601.00002") is None

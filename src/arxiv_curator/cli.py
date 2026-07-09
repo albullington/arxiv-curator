@@ -23,6 +23,7 @@ INTERESTS_PATH = Path("interests.yaml")
 DIGESTS_DIR = Path("digests")
 DEFAULT_CATEGORIES = "cs.AI,cs.LG,cs.CL,stat.ML"
 DEFAULT_DIGEST_WINDOW_DAYS = 2
+DEFAULT_DIGEST_TOP_N = 10
 DEFAULT_RUN_MAX_NEW_PAPERS = 20
 
 
@@ -131,7 +132,7 @@ def feedback(
 
 
 @app.command()
-def digest(top: int = typer.Option(20), since_days: int = typer.Option(DEFAULT_DIGEST_WINDOW_DAYS)):
+def digest(top: int = typer.Option(DEFAULT_DIGEST_TOP_N), since_days: int = typer.Option(DEFAULT_DIGEST_WINDOW_DAYS)):
     conn = get_conn()
     cutoff = (datetime.now(timezone.utc) - timedelta(days=since_days)).isoformat()
     path = digest_module.write_digest(conn, DIGESTS_DIR, top, since=cutoff)
@@ -169,21 +170,23 @@ def eval_cmd():
 @app.command()
 def run():
     conn = get_conn()
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=DEFAULT_DIGEST_WINDOW_DAYS)).isoformat()
     try:
         client = factory.get_client()
         provider = GeminiProvider(client)
         fetch_module.fetch_and_store(conn, DEFAULT_CATEGORIES.split(","), DEFAULT_RUN_MAX_NEW_PAPERS)
-        for paper in db.papers_missing_summary(conn)[:DEFAULT_RUN_MAX_NEW_PAPERS]:
-            text = provider.summarize(paper)
-            db.insert_summary(conn, Summary(
-                arxiv_id=paper.arxiv_id, text=text,
-                created_at=datetime.now(timezone.utc).isoformat(),
-            ))
         rank_module.rank_papers(conn, INTERESTS_PATH, provider, client)
+        for score in digest_module.select_digest_scores(conn, DEFAULT_DIGEST_TOP_N, since=cutoff):
+            paper = db.get_paper(conn, score.arxiv_id)
+            if db.get_summary(conn, paper.arxiv_id) is None:
+                text = provider.summarize(paper)
+                db.insert_summary(conn, Summary(
+                    arxiv_id=paper.arxiv_id, text=text,
+                    created_at=datetime.now(timezone.utc).isoformat(),
+                ))
     except Exception as exc:
         _fail(exc)
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=DEFAULT_DIGEST_WINDOW_DAYS)).isoformat()
-    path = digest_module.write_digest(conn, DIGESTS_DIR, 20, since=cutoff)
+    path = digest_module.write_digest(conn, DIGESTS_DIR, DEFAULT_DIGEST_TOP_N, since=cutoff)
     typer.echo(f"Wrote {path}")
 
 
