@@ -2,11 +2,6 @@ name: Daily Digest
 
 on:
   schedule:
-    # 00:07 Pacific Time (UTC-7 during PDT; drifts to 23:07 PT during PST --
-    # GitHub Actions cron has no DST awareness, and this repo doesn't need
-    # split-hair precision on when exactly midnight PT falls). Deliberately
-    # not on the hour: GitHub's scheduler sees its heaviest load right at
-    # the top of every hour, which can delay or drop runs.
     - cron: "7 7 * * *"
   workflow_dispatch:
 
@@ -16,22 +11,29 @@ permissions:
 jobs:
   digest:
     runs-on: ubuntu-latest
+    env:
+      ARXIV_CURATOR_DATA_DIR: ${{ github.workspace }}/arxiv-curator-data
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Restore database cache
-        uses: actions/cache@v4
+      - name: Checkout private data repo
+        uses: actions/checkout@v4
         with:
-          path: data/arxiv_curator.db
-          key: arxiv-curator-db-${{ github.run_id }}
-          restore-keys: |
-            arxiv-curator-db-
+          repository: albullington/arxiv-curator-data
+          token: ${{ secrets.DATA_REPO_TOKEN }}
+          path: arxiv-curator-data
+      - name: Configure git identity for data repo
+        working-directory: arxiv-curator-data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
       - run: pip install -e .
       - run: arxiv-curator run
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      - run: arxiv-curator sync
       - uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "Daily arXiv digest"
