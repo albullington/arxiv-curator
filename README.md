@@ -24,6 +24,7 @@ session to push your local adds/ratings so tomorrow's run sees them.
 ## Usage
 
     arxiv-curator fetch --categories cs.AI,cs.LG,cs.CL,stat.ML
+    arxiv-curator add <arxiv_id>
     arxiv-curator summarize
     arxiv-curator rank
     arxiv-curator show <arxiv_id>
@@ -31,7 +32,8 @@ session to push your local adds/ratings so tomorrow's run sees them.
     arxiv-curator feedback <arxiv_id> --pages-read 5 --total-pages 12
     arxiv-curator digest
     arxiv-curator eval
-    arxiv-curator run   # fetch + summarize + rank + digest in one shot
+    arxiv-curator run    # fetch + summarize + rank + digest in one shot
+    arxiv-curator sync   # pull remote changes, push local changes
 
 ## How ranking works
 

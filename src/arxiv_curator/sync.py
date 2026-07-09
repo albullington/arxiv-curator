@@ -16,7 +16,7 @@ def pull(data_dir: Path) -> None:
     result = _run_git(["pull", "--ff-only"], cwd=data_dir)
     if result.returncode != 0:
         raise SyncError(
-            f"git pull --ff-only failed (local and remote have diverged): {result.stderr.strip()}"
+            f"git pull --ff-only failed (uncommitted local changes or diverged history): {result.stderr.strip()}"
         )
 
 
