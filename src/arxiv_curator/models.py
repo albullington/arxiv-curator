@@ -38,3 +38,11 @@ class Feedback:
     pages_read: Optional[int] = None
     total_pages: Optional[int] = None
     note: Optional[str] = None
+
+
+@dataclass
+class AgentPickDecision:
+    arxiv_id: str
+    status: str
+    reasoning: str
+    decided_at: str

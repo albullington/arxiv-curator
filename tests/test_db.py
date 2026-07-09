@@ -1,5 +1,5 @@
 from arxiv_curator import db
-from arxiv_curator.models import Paper, Summary, Score, Feedback
+from arxiv_curator.models import Paper, Summary, Score, Feedback, AgentPickDecision
 
 
 def make_paper(arxiv_id="2601.00001"):
@@ -113,3 +113,71 @@ def test_list_papers_since_filters_by_first_seen_at():
     recent_ids = {p.arxiv_id for p in recent}
     assert "new1" in recent_ids
     assert "old1" not in recent_ids
+
+
+def test_agent_pick_decision_upsert_and_get():
+    conn = make_conn()
+    db.insert_paper(conn, make_paper("2601.00001"))
+    db.upsert_agent_pick_decision(conn, AgentPickDecision(
+        arxiv_id="2601.00001", status="held", reasoning="promising but early",
+        decided_at="2026-01-01T00:00:00Z",
+    ))
+    decision = db.get_agent_pick_decision(conn, "2601.00001")
+    assert decision.status == "held"
+    assert decision.reasoning == "promising but early"
+
+
+def test_agent_pick_decision_upsert_replaces_previous():
+    conn = make_conn()
+    db.insert_paper(conn, make_paper("2601.00001"))
+    db.upsert_agent_pick_decision(conn, AgentPickDecision(
+        arxiv_id="2601.00001", status="held", reasoning="first", decided_at="2026-01-01T00:00:00Z",
+    ))
+    db.upsert_agent_pick_decision(conn, AgentPickDecision(
+        arxiv_id="2601.00001", status="picked", reasoning="second", decided_at="2026-01-02T00:00:00Z",
+    ))
+    decision = db.get_agent_pick_decision(conn, "2601.00001")
+    assert decision.status == "picked"
+    assert decision.reasoning == "second"
+
+
+def test_get_agent_pick_decision_returns_none_when_absent():
+    conn = make_conn()
+    assert db.get_agent_pick_decision(conn, "9999.00000") is None
+
+
+def test_list_held_agent_pick_decisions_filters_by_status():
+    conn = make_conn()
+    db.insert_paper(conn, make_paper("held1"))
+    db.insert_paper(conn, make_paper("picked1"))
+    db.upsert_agent_pick_decision(conn, AgentPickDecision(
+        arxiv_id="held1", status="held", reasoning="r", decided_at="t",
+    ))
+    db.upsert_agent_pick_decision(conn, AgentPickDecision(
+        arxiv_id="picked1", status="picked", reasoning="r", decided_at="t",
+    ))
+    held = db.list_held_agent_pick_decisions(conn)
+    assert [d.arxiv_id for d in held] == ["held1"]
+
+
+def test_papers_without_agent_pick_decision_excludes_decided_papers():
+    conn = make_conn()
+    db.insert_paper(conn, make_paper("undecided1"))
+    db.insert_paper(conn, make_paper("rejected1"))
+    db.upsert_agent_pick_decision(conn, AgentPickDecision(
+        arxiv_id="rejected1", status="rejected", reasoning="r", decided_at="t",
+    ))
+    candidates = db.papers_without_agent_pick_decision(conn)
+    assert [p.arxiv_id for p in candidates] == ["undecided1"]
+
+
+def test_papers_without_agent_pick_decision_excludes_held_papers_too():
+    # Held papers are surfaced separately via list_held_agent_pick_decisions
+    # in agent_pick.py -- this query is specifically "never decided at all",
+    # so a held paper (which HAS a decision row) must not appear here.
+    conn = make_conn()
+    db.insert_paper(conn, make_paper("held1"))
+    db.upsert_agent_pick_decision(conn, AgentPickDecision(
+        arxiv_id="held1", status="held", reasoning="r", decided_at="t",
+    ))
+    assert db.papers_without_agent_pick_decision(conn) == []
