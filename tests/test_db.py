@@ -232,3 +232,14 @@ def test_papers_without_agent_pick_decision_excludes_held_papers_too():
         arxiv_id="held1", status="held", reasoning="r", decided_at="t",
     ))
     assert db.papers_without_agent_pick_decision(conn) == []
+
+
+def test_papers_without_agent_pick_decision_excludes_manual_source():
+    # Manually-added papers are ones the user already knows about; they
+    # shouldn't be surfaced as fresh agentic recommendations, mirroring how
+    # list_papers_since already excludes them from the daily digest.
+    conn = make_conn()
+    db.insert_paper(conn, make_paper("fetched1"), source="fetch")
+    db.insert_paper(conn, make_paper("manual1"), source="manual")
+    candidates = db.papers_without_agent_pick_decision(conn)
+    assert [p.arxiv_id for p in candidates] == ["fetched1"]

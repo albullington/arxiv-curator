@@ -5,7 +5,7 @@ from google.genai import types
 
 from arxiv_curator.llm.retry import with_retries
 
-DEFAULT_MODEL = "gemini-2.5-flash"
+DEFAULT_MODEL = "gemini-flash-latest"
 
 
 class AgentLoopError(Exception):
