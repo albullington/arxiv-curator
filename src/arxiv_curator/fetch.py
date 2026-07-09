@@ -1,3 +1,5 @@
+from typing import Optional
+
 import feedparser
 import requests
 
@@ -13,6 +15,24 @@ def build_query_url(categories: list[str], max_results: int) -> str:
         f"{ARXIV_API_URL}?search_query={cat_query}"
         f"&sortBy=submittedDate&sortOrder=descending&max_results={max_results}"
     )
+
+
+def normalize_arxiv_id(arxiv_id_or_url: str) -> str:
+    if "arxiv.org" in arxiv_id_or_url:
+        return arxiv_id_or_url.rstrip("/").split("/")[-1]
+    return arxiv_id_or_url
+
+
+def build_id_query_url(arxiv_id: str) -> str:
+    return f"{ARXIV_API_URL}?id_list={arxiv_id}"
+
+
+def fetch_paper_by_id(arxiv_id: str) -> Optional[Paper]:
+    url = build_id_query_url(arxiv_id)
+    response = requests.get(url, timeout=30)
+    response.raise_for_status()
+    papers = parse_feed(response.text)
+    return papers[0] if papers else None
 
 
 def parse_feed(raw_text: str) -> list[Paper]:

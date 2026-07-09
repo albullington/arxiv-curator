@@ -49,6 +49,21 @@ def fetch(
 
 
 @app.command()
+def add(arxiv_id: str):
+    conn = get_conn()
+    normalized = fetch_module.normalize_arxiv_id(arxiv_id)
+    paper = fetch_module.fetch_paper_by_id(normalized)
+    if paper is None:
+        typer.echo(f"No such arXiv paper: {arxiv_id}")
+        raise typer.Exit(code=1)
+    if db.paper_exists(conn, paper.arxiv_id):
+        typer.echo(f"Already in your database: {paper.arxiv_id} -- {paper.title}")
+        return
+    db.insert_paper(conn, paper)
+    typer.echo(f"Added {paper.arxiv_id}: {paper.title}")
+
+
+@app.command()
 def summarize(limit: int = typer.Option(50)):
     conn = get_conn()
     try:

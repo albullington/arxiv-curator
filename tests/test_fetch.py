@@ -38,6 +38,56 @@ def test_parse_feed_extracts_paper_fields():
     assert paper.url == "http://arxiv.org/abs/2601.00001v1"
 
 
+EMPTY_FEED = """<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+</feed>
+"""
+
+
+class FakeResponse:
+    def __init__(self, text):
+        self.text = text
+
+    def raise_for_status(self):
+        pass
+
+
+def test_normalize_arxiv_id_passes_through_bare_id():
+    assert fetch.normalize_arxiv_id("2601.00001") == "2601.00001"
+
+
+def test_normalize_arxiv_id_extracts_id_from_url():
+    assert fetch.normalize_arxiv_id("https://arxiv.org/abs/2601.00001") == "2601.00001"
+
+
+def test_normalize_arxiv_id_strips_trailing_slash():
+    assert fetch.normalize_arxiv_id("https://arxiv.org/abs/2601.00001/") == "2601.00001"
+
+
+def test_build_id_query_url_includes_id():
+    url = fetch.build_id_query_url("2601.00001")
+    assert "id_list=2601.00001" in url
+
+
+def test_fetch_paper_by_id_returns_paper_when_found(monkeypatch):
+    def fake_get(url, timeout):
+        return FakeResponse(SAMPLE_FEED)
+
+    monkeypatch.setattr(fetch.requests, "get", fake_get)
+    paper = fetch.fetch_paper_by_id("2601.00001")
+    assert paper is not None
+    assert paper.arxiv_id == "2601.00001v1"
+    assert paper.title == "A Great Paper"
+
+
+def test_fetch_paper_by_id_returns_none_when_not_found(monkeypatch):
+    def fake_get(url, timeout):
+        return FakeResponse(EMPTY_FEED)
+
+    monkeypatch.setattr(fetch.requests, "get", fake_get)
+    assert fetch.fetch_paper_by_id("9999.99999") is None
+
+
 def test_fetch_and_store_dedups_existing_papers(monkeypatch):
     conn = db.get_connection(":memory:")
     db.init_db(conn)

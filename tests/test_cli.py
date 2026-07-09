@@ -69,6 +69,60 @@ def test_digest_command_writes_file(tmp_path, monkeypatch):
     assert (digests_dir / "latest.md").exists()
 
 
+def test_add_command_inserts_new_paper(tmp_path, monkeypatch):
+    db_path = tmp_path / "test.db"
+    conn = db.get_connection(db_path)
+    db.init_db(conn)
+    conn.close()
+    monkeypatch.setattr(cli, "DB_PATH", db_path)
+
+    fake_paper = Paper(
+        arxiv_id="2606.06036v1", title="Memory is Reconstructed, Not Retrieved",
+        authors="Shuo Ji", abstract="An abstract about agent memory.",
+        categories="cs.AI", published="2026-06-04T00:00:00Z",
+        url="https://arxiv.org/abs/2606.06036v1",
+    )
+    monkeypatch.setattr(cli.fetch_module, "fetch_paper_by_id", lambda arxiv_id: fake_paper)
+
+    result = runner.invoke(cli.app, ["add", "2606.06036"])
+    assert result.exit_code == 0
+    assert "Memory is Reconstructed" in result.output
+
+    conn = db.get_connection(db_path)
+    assert db.get_paper(conn, "2606.06036v1") is not None
+
+
+def test_add_command_reports_when_already_present(tmp_path, monkeypatch):
+    db_path = tmp_path / "test.db"
+    seed_db(db_path)
+    monkeypatch.setattr(cli, "DB_PATH", db_path)
+    monkeypatch.setattr(
+        cli.fetch_module, "fetch_paper_by_id",
+        lambda arxiv_id: Paper(
+            arxiv_id="2601.00001", title="A Great Paper", authors="Ada Author",
+            abstract="An abstract about transformers.", categories="cs.AI",
+            published="2026-01-01T00:00:00Z", url="https://arxiv.org/abs/2601.00001",
+        ),
+    )
+
+    result = runner.invoke(cli.app, ["add", "2601.00001"])
+    assert result.exit_code == 0
+    assert "Already in your database" in result.output
+
+
+def test_add_command_reports_not_found(tmp_path, monkeypatch):
+    db_path = tmp_path / "test.db"
+    conn = db.get_connection(db_path)
+    db.init_db(conn)
+    conn.close()
+    monkeypatch.setattr(cli, "DB_PATH", db_path)
+    monkeypatch.setattr(cli.fetch_module, "fetch_paper_by_id", lambda arxiv_id: None)
+
+    result = runner.invoke(cli.app, ["add", "9999.99999"])
+    assert result.exit_code == 1
+    assert "No such arXiv paper" in result.output
+
+
 def test_summarize_command_fails_cleanly_without_api_key(tmp_path, monkeypatch):
     db_path = tmp_path / "test.db"
     seed_db(db_path)
