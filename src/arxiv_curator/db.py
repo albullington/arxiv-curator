@@ -5,7 +5,7 @@ from typing import Optional
 
 import numpy as np
 
-from arxiv_curator.models import Paper, Summary, Score, Feedback
+from arxiv_curator.models import Paper, Summary, Score, Feedback, AgentPickDecision
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS papers (
@@ -49,6 +49,13 @@ CREATE TABLE IF NOT EXISTS embeddings (
     arxiv_id TEXT PRIMARY KEY REFERENCES papers(arxiv_id),
     vector TEXT NOT NULL,
     created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS agent_pick_decisions (
+    arxiv_id TEXT PRIMARY KEY REFERENCES papers(arxiv_id),
+    status TEXT NOT NULL,
+    reasoning TEXT NOT NULL,
+    decided_at TEXT NOT NULL
 );
 """
 
@@ -200,3 +207,42 @@ def get_embeddings(conn, arxiv_ids: list[str]) -> dict:
         arxiv_ids,
     ).fetchall()
     return {row["arxiv_id"]: np.array(json.loads(row["vector"])) for row in rows}
+
+
+def _row_to_agent_pick_decision(row) -> AgentPickDecision:
+    return AgentPickDecision(
+        arxiv_id=row["arxiv_id"], status=row["status"],
+        reasoning=row["reasoning"], decided_at=row["decided_at"],
+    )
+
+
+def upsert_agent_pick_decision(conn, decision: AgentPickDecision) -> None:
+    conn.execute(
+        "INSERT OR REPLACE INTO agent_pick_decisions "
+        "(arxiv_id, status, reasoning, decided_at) VALUES (?, ?, ?, ?)",
+        (decision.arxiv_id, decision.status, decision.reasoning, decision.decided_at),
+    )
+    conn.commit()
+
+
+def get_agent_pick_decision(conn, arxiv_id: str) -> Optional[AgentPickDecision]:
+    row = conn.execute(
+        "SELECT * FROM agent_pick_decisions WHERE arxiv_id = ?", (arxiv_id,)
+    ).fetchone()
+    return _row_to_agent_pick_decision(row) if row else None
+
+
+def list_held_agent_pick_decisions(conn) -> list[AgentPickDecision]:
+    rows = conn.execute(
+        "SELECT * FROM agent_pick_decisions WHERE status = 'held'"
+    ).fetchall()
+    return [_row_to_agent_pick_decision(row) for row in rows]
+
+
+def papers_without_agent_pick_decision(conn) -> list[Paper]:
+    rows = conn.execute(
+        "SELECT p.* FROM papers p "
+        "LEFT JOIN agent_pick_decisions d ON p.arxiv_id = d.arxiv_id "
+        "WHERE d.arxiv_id IS NULL AND p.source != 'manual'"
+    ).fetchall()
+    return [_row_to_paper(row) for row in rows]

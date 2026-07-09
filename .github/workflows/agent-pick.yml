@@ -1,0 +1,45 @@
+name: Agent Pick
+
+on:
+  schedule:
+    # 00:07 Pacific Time (UTC-7 during PDT; drifts to 23:07 PT during PST --
+    # same rationale as Daily Digest: GitHub's scheduler sees its heaviest
+    # load right at the top of every hour, so this is deliberately off it).
+    # Fridays only.
+    - cron: "7 7 * * 5"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  agent-pick:
+    runs-on: ubuntu-latest
+    env:
+      ARXIV_CURATOR_DATA_DIR: ${{ github.workspace }}/arxiv-curator-data
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Checkout private data repo
+        uses: actions/checkout@v4
+        with:
+          repository: albullington/arxiv-curator-data
+          token: ${{ secrets.DATA_REPO_TOKEN }}
+          path: arxiv-curator-data
+      - name: Configure git identity for data repo
+        working-directory: arxiv-curator-data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+      - run: pip install -e .
+      - run: arxiv-curator agent-pick
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      - run: arxiv-curator sync
+      - uses: stefanzweifel/git-auto-commit-action@v5
+        if: always()
+        with:
+          commit_message: "Agent pick digest"
+          file_pattern: "digests/agent-pick-*.md"

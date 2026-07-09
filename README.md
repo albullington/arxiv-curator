@@ -34,6 +34,7 @@ session to push your local adds/ratings so tomorrow's run sees them.
     arxiv-curator eval
     arxiv-curator run    # fetch + summarize + rank + digest in one shot
     arxiv-curator sync   # pull remote changes, push local changes
+    arxiv-curator agent-pick   # confidence-gated agentic alternative to `digest`
 
 ## How ranking works
 
@@ -54,6 +55,18 @@ accumulated.
 
 `digests/latest.md` always has the most recent run; `digests/YYYY-MM-DD.md`
 keeps history. Both render natively when browsing this repo on GitHub.
+
+`arxiv-curator agent-pick` writes its own parallel output --
+`digests/agent-pick-latest.md` and `digests/agent-pick-YYYY-MM-DD.md` --
+instead of touching the regular digest files, so the two can be compared
+side by side. It reasons over a shortlist of candidates with an LLM
+tool-calling loop against a career/learning-value bar (deepens
+understanding of LLMs and their infrastructure, or suggests something
+concretely triable), surfacing up to 3 picks per run and holding
+borderline papers for future reconsideration instead of forcing a
+verdict. Scheduled weekly (Fridays) via `.github/workflows/agent-pick.yml`,
+alongside the existing daily digest -- an experiment to run in parallel,
+not a replacement.
 
 ## Evals
 
