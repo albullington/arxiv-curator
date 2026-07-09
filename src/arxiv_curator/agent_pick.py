@@ -1,4 +1,5 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
+from pathlib import Path
 
 from arxiv_curator import db
 from arxiv_curator.llm.agent_loop import ToolSpec, run_tool_loop
@@ -220,3 +221,34 @@ def run_agent_pick(conn, client, criteria_text: str = CRITERIA_TEXT) -> list:
         db.upsert_agent_pick_decision(conn, record)
         persisted.append(record)
     return persisted
+
+
+def render_agent_pick_digest(conn, picked: list) -> str:
+    lines = [f"# Agent Pick -- {date.today().isoformat()}", ""]
+    if not picked:
+        lines.append("Nothing cleared the bar this run.")
+        lines.append("")
+        return "\n".join(lines)
+    for decision in picked:
+        paper = db.get_paper(conn, decision.arxiv_id)
+        summary = db.get_summary(conn, decision.arxiv_id)
+        lines.append(f"## [{paper.title}]({paper.url})")
+        lines.append(f"**arXiv:** {paper.arxiv_id}")
+        lines.append("")
+        lines.append(summary.text if summary else paper.abstract)
+        lines.append("")
+        lines.append(f"**Why this was picked:** {decision.reasoning}")
+        lines.append("")
+        lines.append(f"`arxiv-curator feedback {paper.arxiv_id} --rating up`")
+        lines.append("")
+    return "\n".join(lines)
+
+
+def write_agent_pick_digest(conn, out_dir, picked: list) -> Path:
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    content = render_agent_pick_digest(conn, picked)
+    dated_path = out_dir / f"agent-pick-{date.today().isoformat()}.md"
+    dated_path.write_text(content)
+    (out_dir / "agent-pick-latest.md").write_text(content)
+    return dated_path

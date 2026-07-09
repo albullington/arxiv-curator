@@ -1,4 +1,5 @@
 import numpy as np
+from datetime import date
 
 from arxiv_curator import agent_pick, db, rank
 from arxiv_curator.models import AgentPickDecision, Feedback, Paper, Summary
@@ -245,3 +246,48 @@ def test_run_agent_pick_raises_and_persists_nothing_on_invalid_finalize_payload(
     with pytest.raises(agent_pick.InvalidFinalizePayload):
         agent_pick.run_agent_pick(conn, client=None)
     assert db.get_agent_pick_decision(conn, "p1") is None
+
+
+def test_render_agent_pick_digest_includes_title_summary_and_reasoning():
+    conn = make_conn()
+    db.insert_paper(conn, make_paper("p1", "An abstract."))
+    db.insert_summary(conn, Summary(arxiv_id="p1", text="A short summary.", created_at="t"))
+
+    text = agent_pick.render_agent_pick_digest(conn, [
+        AgentPickDecision(arxiv_id="p1", status="picked", reasoning="Great fit for career growth.", decided_at="t"),
+    ])
+    assert "Title p1" in text
+    assert "A short summary." in text
+    assert "Great fit for career growth." in text
+    assert "arxiv-curator feedback p1 --rating up" in text
+
+
+def test_render_agent_pick_digest_falls_back_to_abstract_without_summary():
+    conn = make_conn()
+    db.insert_paper(conn, make_paper("p1", "The raw abstract text."))
+
+    text = agent_pick.render_agent_pick_digest(conn, [
+        AgentPickDecision(arxiv_id="p1", status="picked", reasoning="x", decided_at="t"),
+    ])
+    assert "The raw abstract text." in text
+
+
+def test_render_agent_pick_digest_explains_when_nothing_picked():
+    conn = make_conn()
+    text = agent_pick.render_agent_pick_digest(conn, [])
+    assert "Nothing cleared the bar this run." in text
+
+
+def test_write_agent_pick_digest_creates_dated_and_latest_files(tmp_path):
+    conn = make_conn()
+    db.insert_paper(conn, make_paper("p1", "An abstract."))
+
+    dated_path = agent_pick.write_agent_pick_digest(conn, tmp_path, [
+        AgentPickDecision(arxiv_id="p1", status="picked", reasoning="x", decided_at="t"),
+    ])
+    today = date.today().isoformat()
+    assert dated_path == tmp_path / f"agent-pick-{today}.md"
+    assert dated_path.exists()
+    latest_path = tmp_path / "agent-pick-latest.md"
+    assert latest_path.exists()
+    assert latest_path.read_text() == dated_path.read_text()
