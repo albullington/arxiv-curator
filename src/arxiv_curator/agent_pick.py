@@ -231,6 +231,8 @@ def render_agent_pick_digest(conn, picked: list) -> str:
         return "\n".join(lines)
     for decision in picked:
         paper = db.get_paper(conn, decision.arxiv_id)
+        if paper is None:
+            continue
         summary = db.get_summary(conn, decision.arxiv_id)
         lines.append(f"## [{paper.title}]({paper.url})")
         lines.append(f"**arXiv:** {paper.arxiv_id}")

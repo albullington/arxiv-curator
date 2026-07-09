@@ -278,6 +278,19 @@ def test_render_agent_pick_digest_explains_when_nothing_picked():
     assert "Nothing cleared the bar this run." in text
 
 
+def test_render_agent_pick_digest_skips_decision_with_missing_paper():
+    conn = make_conn()
+    db.insert_paper(conn, make_paper("p1", "An abstract."))
+
+    text = agent_pick.render_agent_pick_digest(conn, [
+        AgentPickDecision(arxiv_id="missing1", status="picked", reasoning="ghost", decided_at="t"),
+        AgentPickDecision(arxiv_id="p1", status="picked", reasoning="x", decided_at="t"),
+    ])
+    assert "missing1" not in text
+    assert "ghost" not in text
+    assert "Title p1" in text
+
+
 def test_write_agent_pick_digest_creates_dated_and_latest_files(tmp_path):
     conn = make_conn()
     db.insert_paper(conn, make_paper("p1", "An abstract."))
