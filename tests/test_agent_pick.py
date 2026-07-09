@@ -194,3 +194,54 @@ def test_validate_decisions_rejects_duplicate_decision_for_same_paper():
     ]
     with pytest.raises(agent_pick.InvalidFinalizePayload, match="duplicate"):
         agent_pick.validate_decisions({"p1"}, decisions)
+
+
+def test_run_agent_pick_persists_validated_decisions(monkeypatch):
+    conn = make_conn()
+    db.insert_paper(conn, make_paper("p1", "about agent tool use"))
+
+    def fake_embed_texts(texts, client):
+        return np.array([[1.0, 0.0] for _ in texts])
+
+    monkeypatch.setattr(agent_pick, "embed_texts", fake_embed_texts)
+    monkeypatch.setattr(rank, "embed_texts", fake_embed_texts)
+    monkeypatch.setattr(
+        agent_pick, "run_tool_loop",
+        lambda *a, **k: {"decisions": [{"arxiv_id": "p1", "status": "picked", "reasoning": "great fit"}]},
+    )
+
+    decisions = agent_pick.run_agent_pick(conn, client=None)
+    assert len(decisions) == 1
+    assert decisions[0].status == "picked"
+    assert db.get_agent_pick_decision(conn, "p1").status == "picked"
+
+
+def test_run_agent_pick_returns_empty_list_when_shortlist_is_empty(monkeypatch):
+    conn = make_conn()
+
+    loop_called = []
+    monkeypatch.setattr(agent_pick, "run_tool_loop", lambda *a, **k: loop_called.append(1))
+
+    decisions = agent_pick.run_agent_pick(conn, client=None)
+    assert decisions == []
+    assert loop_called == []
+
+
+def test_run_agent_pick_raises_and_persists_nothing_on_invalid_finalize_payload(monkeypatch):
+    conn = make_conn()
+    db.insert_paper(conn, make_paper("p1", "about agent tool use"))
+
+    def fake_embed_texts(texts, client):
+        return np.array([[1.0, 0.0] for _ in texts])
+
+    monkeypatch.setattr(agent_pick, "embed_texts", fake_embed_texts)
+    monkeypatch.setattr(rank, "embed_texts", fake_embed_texts)
+    monkeypatch.setattr(
+        agent_pick, "run_tool_loop",
+        lambda *a, **k: {"decisions": [{"arxiv_id": "unknown1", "status": "picked", "reasoning": "x"}]},
+    )
+
+    import pytest
+    with pytest.raises(agent_pick.InvalidFinalizePayload):
+        agent_pick.run_agent_pick(conn, client=None)
+    assert db.get_agent_pick_decision(conn, "p1") is None

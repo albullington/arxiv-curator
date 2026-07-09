@@ -1,5 +1,9 @@
+from datetime import datetime, timezone
+
 from arxiv_curator import db
+from arxiv_curator.llm.agent_loop import ToolSpec, run_tool_loop
 from arxiv_curator.llm.embeddings import cosine_similarity, embed_texts
+from arxiv_curator.models import AgentPickDecision
 from arxiv_curator.rank import get_paper_vectors
 
 AGENT_PICK_SHORTLIST_SIZE = 10
@@ -112,3 +116,107 @@ def validate_decisions(shortlist_ids: set, raw_decisions: list) -> list:
         raise InvalidFinalizePayload(f"{picked_count} papers picked, max is {MAX_PICKS_PER_RUN}")
 
     return raw_decisions
+
+
+GET_PAPER_DETAIL_SCHEMA = {
+    "type": "object",
+    "properties": {"arxiv_id": {"type": "string"}},
+    "required": ["arxiv_id"],
+}
+
+GET_FEEDBACK_HISTORY_SCHEMA = {
+    "type": "object",
+    "properties": {"arxiv_id": {"type": "string"}},
+    "required": ["arxiv_id"],
+}
+
+FINALIZE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "decisions": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "arxiv_id": {"type": "string"},
+                    "status": {"type": "string", "enum": sorted(VALID_STATUSES)},
+                    "reasoning": {"type": "string"},
+                },
+                "required": ["arxiv_id", "status", "reasoning"],
+            },
+        },
+    },
+    "required": ["decisions"],
+}
+
+
+def build_system_prompt(criteria_text: str, shortlist: list, held_reasoning_by_id: dict) -> str:
+    lines = [
+        "You are picking up to 3 arXiv papers per run against this bar:",
+        criteria_text,
+        "",
+        "Candidates:",
+    ]
+    for paper in shortlist:
+        lines.append(f"- {paper.arxiv_id}: {paper.title}")
+        lines.append(f"  Abstract: {paper.abstract}")
+        if paper.arxiv_id in held_reasoning_by_id:
+            lines.append(f"  Previously held because: {held_reasoning_by_id[paper.arxiv_id]}")
+    lines.append("")
+    lines.append(
+        "Use get_paper_detail and get_feedback_history if you need more than "
+        "the abstract to judge a candidate. When ready, call finalize with a "
+        "decision (picked/held/rejected) and reasoning for every candidate "
+        "listed above -- up to 3 may be picked."
+    )
+    return "\n".join(lines)
+
+
+def build_tools(conn, client) -> list:
+    return [
+        ToolSpec(
+            name="get_paper_detail",
+            description="Get the full abstract, cached summary, authors, and categories for a candidate paper.",
+            parameters_json_schema=GET_PAPER_DETAIL_SCHEMA,
+            handler=lambda arxiv_id: get_paper_detail(conn, arxiv_id),
+        ),
+        ToolSpec(
+            name="get_feedback_history",
+            description="Get the ~3 most similar previously-rated papers to a candidate, with rating and note.",
+            parameters_json_schema=GET_FEEDBACK_HISTORY_SCHEMA,
+            handler=lambda arxiv_id: get_feedback_history(conn, client, arxiv_id),
+        ),
+        ToolSpec(
+            name="finalize",
+            description="Submit final decisions for every candidate.",
+            parameters_json_schema=FINALIZE_SCHEMA,
+            handler=None,
+        ),
+    ]
+
+
+def run_agent_pick(conn, client, criteria_text: str = CRITERIA_TEXT) -> list:
+    shortlist, held_reasoning_by_id = build_shortlist(conn, client, criteria_text)
+    if not shortlist:
+        return []
+
+    system_prompt = build_system_prompt(criteria_text, shortlist, held_reasoning_by_id)
+    tools = build_tools(conn, client)
+    result = run_tool_loop(
+        client, system_prompt, tools,
+        finalize_tool_name="finalize", max_tool_calls=AGENT_PICK_MAX_TOOL_CALLS,
+    )
+
+    shortlist_ids = {p.arxiv_id for p in shortlist}
+    decisions = validate_decisions(shortlist_ids, result.get("decisions", []))
+
+    now = datetime.now(timezone.utc).isoformat()
+    persisted = []
+    for entry in decisions:
+        record = AgentPickDecision(
+            arxiv_id=entry["arxiv_id"], status=entry["status"],
+            reasoning=entry["reasoning"], decided_at=now,
+        )
+        db.upsert_agent_pick_decision(conn, record)
+        persisted.append(record)
+    return persisted
