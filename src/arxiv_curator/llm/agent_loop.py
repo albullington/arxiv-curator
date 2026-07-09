@@ -58,7 +58,11 @@ def run_tool_loop(
             calls_made += 1
             if calls_made > max_tool_calls:
                 raise AgentLoopError(f"Exceeded {max_tool_calls} tool calls without finalize.")
+            if call.name not in tool_by_name:
+                raise AgentLoopError(f"Model called unknown tool {call.name!r}.")
             spec = tool_by_name[call.name]
+            if spec.handler is None:
+                raise AgentLoopError(f"Tool {call.name!r} has no handler.")
             result = spec.handler(**call.args)
             response_parts.append(types.Part.from_function_response(name=call.name, response=result))
 

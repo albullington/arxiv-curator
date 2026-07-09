@@ -105,3 +105,27 @@ def test_run_tool_loop_raises_when_model_returns_no_tool_call():
     ])
     with pytest.raises(AgentLoopError, match="no tool call"):
         run_tool_loop(client, "system prompt", tools=[FINALIZE_TOOL])
+
+
+def test_run_tool_loop_raises_on_unknown_tool_name():
+    client = ScriptedClient([
+        response_with_parts([function_call_part("mystery_tool", {"foo": "bar"})]),
+    ])
+    with pytest.raises(AgentLoopError, match="unknown tool"):
+        run_tool_loop(client, "system prompt", tools=[FINALIZE_TOOL])
+
+
+def test_run_tool_loop_raises_when_tool_has_no_handler():
+    handlerless_tool = ToolSpec(
+        name="get_paper_detail", description="Get detail.",
+        parameters_json_schema={
+            "type": "object", "properties": {"arxiv_id": {"type": "string"}},
+            "required": ["arxiv_id"],
+        },
+        handler=None,
+    )
+    client = ScriptedClient([
+        response_with_parts([function_call_part("get_paper_detail", {"arxiv_id": "p1"})]),
+    ])
+    with pytest.raises(AgentLoopError, match="no handler"):
+        run_tool_loop(client, "system prompt", tools=[handlerless_tool, FINALIZE_TOOL])
