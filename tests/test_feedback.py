@@ -46,3 +46,9 @@ def test_record_feedback_rejects_pages_read_exceeding_total():
     conn = make_conn_with_paper()
     with pytest.raises(ValueError, match="pages_read"):
         feedback.record_feedback(conn, "2601.00001", pages_read=20, total_pages=10)
+
+
+def test_record_feedback_rejects_empty_feedback():
+    conn = make_conn_with_paper()
+    with pytest.raises(ValueError, match="rating, note, or pages_read"):
+        feedback.record_feedback(conn, "2601.00001")
