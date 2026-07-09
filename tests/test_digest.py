@@ -79,3 +79,28 @@ def test_render_digest_without_since_is_unchanged():
     conn = make_seeded_conn()
     text = digest.render_digest(conn, top_n=20)
     assert "A Great Paper" in text
+
+
+def test_select_digest_scores_orders_by_score_and_respects_top_n():
+    conn = make_seeded_conn()
+    db.insert_paper(conn, Paper(
+        arxiv_id="2601.00002", title="Second Paper", authors="A", abstract="B",
+        categories="cs.AI", published="2026-01-01T00:00:00Z", url="https://arxiv.org/abs/2601.00002",
+    ))
+    db.upsert_score(conn, Score(
+        arxiv_id="2601.00002", similarity=0.1, feedback_adjustment=0.0, final_score=0.1,
+        explanation="Weak match.", created_at="t",
+    ))
+    scores = digest.select_digest_scores(conn, top_n=1)
+    assert [s.arxiv_id for s in scores] == ["2601.00001"]
+
+
+def test_select_digest_scores_respects_since_filter():
+    conn = make_seeded_conn()
+    conn.execute(
+        "UPDATE papers SET first_seen_at = ? WHERE arxiv_id = ?",
+        ("2020-01-01T00:00:00+00:00", "2601.00001"),
+    )
+    conn.commit()
+    scores = digest.select_digest_scores(conn, top_n=20, since="2025-01-01T00:00:00+00:00")
+    assert scores == []
