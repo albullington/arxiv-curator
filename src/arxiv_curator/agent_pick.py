@@ -225,14 +225,12 @@ def run_agent_pick(conn, client, criteria_text: str = CRITERIA_TEXT) -> list:
 
 def render_agent_pick_digest(conn, picked: list) -> str:
     lines = [f"# Agent Pick -- {date.today().isoformat()}", ""]
-    if not picked:
-        lines.append("Nothing cleared the bar this run.")
-        lines.append("")
-        return "\n".join(lines)
+    rendered_any = False
     for decision in picked:
         paper = db.get_paper(conn, decision.arxiv_id)
         if paper is None:
             continue
+        rendered_any = True
         summary = db.get_summary(conn, decision.arxiv_id)
         lines.append(f"## [{paper.title}]({paper.url})")
         lines.append(f"**arXiv:** {paper.arxiv_id}")
@@ -242,6 +240,9 @@ def render_agent_pick_digest(conn, picked: list) -> str:
         lines.append(f"**Why this was picked:** {decision.reasoning}")
         lines.append("")
         lines.append(f"`arxiv-curator feedback {paper.arxiv_id} --rating up`")
+        lines.append("")
+    if not rendered_any:
+        lines.append("Nothing cleared the bar this run.")
         lines.append("")
     return "\n".join(lines)
 
