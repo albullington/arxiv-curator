@@ -11,10 +11,15 @@ AGENT_PICK_SHORTLIST_SIZE = 10
 AGENT_PICK_MAX_TOOL_CALLS = 8
 
 CRITERIA_TEXT = (
-    "Papers that would deepen understanding of large language models and "
-    "the infrastructure around them, or suggest something concretely "
-    "triable in a sandbox project or at work -- not just papers that are "
-    "topically similar to past interests."
+    "Papers that would deepen understanding of the systems built on top of "
+    "LLMs -- evaluation methodology, agent harnesses and orchestration, "
+    "memory architectures, tool use, and other AI-builder tooling -- or "
+    "suggest something concretely triable in a sandbox project or at work. "
+    "Explicitly not papers primarily about model architecture, pretraining, "
+    "fine-tuning, or other changes to the transformer/training stack itself, "
+    "even if well-executed -- that's a deeper layer of the stack than this "
+    "work touches. Not just papers that are topically similar to past "
+    "interests, either."
 )
 
 
