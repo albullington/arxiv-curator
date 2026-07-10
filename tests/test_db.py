@@ -243,3 +243,18 @@ def test_papers_without_agent_pick_decision_excludes_manual_source():
     db.insert_paper(conn, make_paper("manual1"), source="manual")
     candidates = db.papers_without_agent_pick_decision(conn)
     assert [p.arxiv_id for p in candidates] == ["fetched1"]
+
+
+def test_papers_without_agent_pick_decision_excludes_papers_with_feedback():
+    # A paper can be rated via the regular digest's feedback flow without
+    # ever getting an agent_pick_decision row. Without this exclusion it
+    # would keep resurfacing as an agent-pick candidate indefinitely even
+    # though the user has already read and rated it.
+    conn = make_conn()
+    db.insert_paper(conn, make_paper("unread1"))
+    db.insert_paper(conn, make_paper("read1"))
+    db.insert_feedback(conn, Feedback(
+        arxiv_id="read1", created_at="t", rating="up",
+    ))
+    candidates = db.papers_without_agent_pick_decision(conn)
+    assert [p.arxiv_id for p in candidates] == ["unread1"]
