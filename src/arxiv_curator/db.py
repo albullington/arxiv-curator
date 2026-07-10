@@ -243,6 +243,7 @@ def papers_without_agent_pick_decision(conn) -> list[Paper]:
     rows = conn.execute(
         "SELECT p.* FROM papers p "
         "LEFT JOIN agent_pick_decisions d ON p.arxiv_id = d.arxiv_id "
-        "WHERE d.arxiv_id IS NULL AND p.source != 'manual'"
+        "WHERE d.arxiv_id IS NULL AND p.source != 'manual' "
+        "AND NOT EXISTS (SELECT 1 FROM feedback f WHERE f.arxiv_id = p.arxiv_id)"
     ).fetchall()
     return [_row_to_paper(row) for row in rows]

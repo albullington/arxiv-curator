@@ -2,11 +2,15 @@ name: Agent Pick
 
 on:
   schedule:
-    # 00:07 Pacific Time (UTC-7 during PDT; drifts to 23:07 PT during PST --
+    # 00:47 Pacific Time (UTC-7 during PDT; drifts to 23:47 PT during PST --
     # same rationale as Daily Digest: GitHub's scheduler sees its heaviest
     # load right at the top of every hour, so this is deliberately off it).
-    # Fridays only.
-    - cron: "7 7 * * 5"
+    # Fridays only. Offset 40 minutes after Daily Digest's 7:07 slot so the
+    # two workflows don't race to push to the same repos when both fire on
+    # a Friday -- they share commit targets (main repo's digests/ dir and
+    # the private data repo's sqlite db), and a same-time collision causes
+    # a non-fast-forward push rejection for whichever job loses the race.
+    - cron: "47 7 * * 5"
   workflow_dispatch:
 
 permissions:
