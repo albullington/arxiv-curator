@@ -23,8 +23,6 @@ arxiv-curator = "arxiv_curator.cli:app"
 requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
-[tool.setuptools.packages.find]
-where = ["src"]
-
-[tool.pytest.ini_options]
-pythonpath = ["src"]
+[tool.setuptools]
+package-dir = {"arxiv_curator" = "src"}
+packages = ["arxiv_curator", "arxiv_curator.llm"]
