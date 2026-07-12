@@ -24,6 +24,7 @@ session to push your local adds/ratings so tomorrow's run sees them.
 ## Usage
 
     arxiv-curator fetch --categories cs.AI,cs.LG,cs.CL,stat.ML
+    arxiv-curator backfill-pages   # fill in page counts for papers fetched before this feature existed
     arxiv-curator add <arxiv_id>
     arxiv-curator summarize
     arxiv-curator rank
