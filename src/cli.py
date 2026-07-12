@@ -150,6 +150,13 @@ def sync():
     typer.echo(result)
 
 
+@app.command(name="backfill-pages")
+def backfill_pages_cmd():
+    conn = get_conn()
+    updated_count = fetch_module.backfill_pages(conn)
+    typer.echo(f"Updated page counts for {updated_count} papers.")
+
+
 @app.command()
 def digest(top: int = typer.Option(DEFAULT_DIGEST_TOP_N), since_days: int = typer.Option(DEFAULT_DIGEST_WINDOW_DAYS)):
     conn = get_conn()

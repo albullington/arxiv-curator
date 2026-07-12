@@ -37,6 +37,10 @@ def build_id_query_url(arxiv_id: str) -> str:
     return f"{ARXIV_API_URL}?id_list={arxiv_id}"
 
 
+def build_ids_query_url(arxiv_ids: list[str]) -> str:
+    return f"{ARXIV_API_URL}?id_list={','.join(arxiv_ids)}"
+
+
 def fetch_paper_by_id(arxiv_id: str) -> Optional[Paper]:
     url = build_id_query_url(arxiv_id)
     response = requests.get(url, timeout=30)
@@ -80,3 +84,21 @@ def fetch_and_store(conn, categories: list[str], max_results: int) -> int:
             db.insert_paper(conn, paper, source="fetch")
             new_count += 1
     return new_count
+
+
+BACKFILL_CHUNK_SIZE = 50
+
+
+def backfill_pages(conn) -> int:
+    missing = db.papers_missing_pages(conn)
+    updated_count = 0
+    for i in range(0, len(missing), BACKFILL_CHUNK_SIZE):
+        chunk = missing[i:i + BACKFILL_CHUNK_SIZE]
+        url = build_ids_query_url([p.arxiv_id for p in chunk])
+        response = requests.get(url, timeout=30)
+        response.raise_for_status()
+        for paper in parse_feed(response.text):
+            if paper.pages is not None:
+                db.update_paper_pages(conn, paper.arxiv_id, paper.pages)
+                updated_count += 1
+    return updated_count

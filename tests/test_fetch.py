@@ -92,6 +92,11 @@ def test_build_id_query_url_includes_id():
     assert "id_list=2601.00001" in url
 
 
+def test_build_ids_query_url_joins_multiple_ids():
+    url = fetch.build_ids_query_url(["2601.00001", "2601.00002", "2601.00003"])
+    assert "id_list=2601.00001,2601.00002,2601.00003" in url
+
+
 def test_fetch_paper_by_id_returns_paper_when_found(monkeypatch):
     def fake_get(url, timeout):
         return FakeResponse(SAMPLE_FEED)
@@ -163,3 +168,82 @@ def test_extract_page_count_returns_none_for_none_input():
 
 def test_extract_page_count_is_case_insensitive():
     assert fetch.extract_page_count("8 Pages, 4 Figures") == 8
+
+
+TWO_ENTRY_FEED_WITH_COMMENTS = """<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:arxiv="http://arxiv.org/schemas/atom">
+  <entry>
+    <id>http://arxiv.org/abs/2601.00001v1</id>
+    <title>First Paper</title>
+    <summary>Summary one.</summary>
+    <published>2026-01-01T00:00:00Z</published>
+    <link href="http://arxiv.org/abs/2601.00001v1" rel="alternate"/>
+    <author><name>Ada Author</name></author>
+    <category term="cs.AI"/>
+    <arxiv:comment>12 pages, 3 figures</arxiv:comment>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2601.00002v1</id>
+    <title>Second Paper</title>
+    <summary>Summary two.</summary>
+    <published>2026-01-01T00:00:00Z</published>
+    <link href="http://arxiv.org/abs/2601.00002v1" rel="alternate"/>
+    <author><name>Bo Byte</name></author>
+    <category term="cs.AI"/>
+  </entry>
+</feed>
+"""
+
+
+def test_backfill_pages_updates_only_papers_with_parseable_comment(monkeypatch):
+    conn = db.get_connection(":memory:")
+    db.init_db(conn)
+    db.insert_paper(conn, Paper(
+        arxiv_id="2601.00001v1", title="First Paper", authors="Ada Author",
+        abstract="Summary one.", categories="cs.AI",
+        published="2026-01-01T00:00:00Z", url="http://arxiv.org/abs/2601.00001v1",
+    ))
+    db.insert_paper(conn, Paper(
+        arxiv_id="2601.00002v1", title="Second Paper", authors="Bo Byte",
+        abstract="Summary two.", categories="cs.AI",
+        published="2026-01-01T00:00:00Z", url="http://arxiv.org/abs/2601.00002v1",
+    ))
+
+    def fake_get(url, timeout):
+        return FakeResponse(TWO_ENTRY_FEED_WITH_COMMENTS)
+
+    monkeypatch.setattr(fetch.requests, "get", fake_get)
+    updated_count = fetch.backfill_pages(conn)
+
+    assert updated_count == 1
+    assert db.get_paper(conn, "2601.00001v1").pages == 12
+    assert db.get_paper(conn, "2601.00002v1").pages is None
+
+
+def test_backfill_pages_returns_zero_when_nothing_missing():
+    conn = db.get_connection(":memory:")
+    db.init_db(conn)
+    assert fetch.backfill_pages(conn) == 0
+
+
+def test_backfill_pages_chunks_requests_by_fifty(monkeypatch):
+    conn = db.get_connection(":memory:")
+    db.init_db(conn)
+    for i in range(120):
+        arxiv_id = f"2601.{i:05d}"
+        db.insert_paper(conn, Paper(
+            arxiv_id=arxiv_id, title="T", authors="A", abstract="B",
+            categories="cs.AI", published="2026-01-01T00:00:00Z",
+            url=f"http://arxiv.org/abs/{arxiv_id}",
+        ))
+
+    calls = []
+
+    def fake_get(url, timeout):
+        calls.append(url)
+        return FakeResponse(EMPTY_FEED)
+
+    monkeypatch.setattr(fetch.requests, "get", fake_get)
+    fetch.backfill_pages(conn)
+
+    assert len(calls) == 3  # 120 papers / 50 per chunk = 3 requests
