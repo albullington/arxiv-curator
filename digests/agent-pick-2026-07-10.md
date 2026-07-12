@@ -2,6 +2,7 @@
 
 ## [DepthWeave-KV: Token-Adaptive Cross-Layer Residual Factorization for Long-Context KV Cache Compression](https://arxiv.org/abs/2607.06523v1)
 **arXiv:** 2607.06523v1
+**Length:** 9 pages
 
 DepthWeave-KV presents a novel, token-adaptive method to compress key-value caches for long-context LLMs, addressing the limitations of uniform compression by factorizing K/V states across layers and dynamically allocating precision to critical tokens (like instructions) during inference without retraining. This approach achieves near full-cache performance and improved retrieval accuracy with significantly reduced memory—up to 8.3x KV memory reduction—outperforming prior compressed caches on various long-context benchmarks.
 
