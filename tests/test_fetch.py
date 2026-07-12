@@ -36,6 +36,29 @@ def test_parse_feed_extracts_paper_fields():
     assert "Bo Byte" in paper.authors
     assert "cs.AI" in paper.categories
     assert paper.url == "http://arxiv.org/abs/2601.00001v1"
+    assert paper.pages is None
+
+
+FEED_WITH_COMMENT = """<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:arxiv="http://arxiv.org/schemas/atom">
+  <entry>
+    <id>http://arxiv.org/abs/2601.00001v1</id>
+    <title>A Great Paper</title>
+    <summary>This paper studies something interesting.</summary>
+    <published>2026-01-01T00:00:00Z</published>
+    <link href="http://arxiv.org/abs/2601.00001v1" rel="alternate"/>
+    <author><name>Ada Author</name></author>
+    <category term="cs.AI"/>
+    <arxiv:comment>27 pages, 2 figures</arxiv:comment>
+  </entry>
+</feed>
+"""
+
+
+def test_parse_feed_sets_pages_from_arxiv_comment():
+    papers = fetch.parse_feed(FEED_WITH_COMMENT)
+    assert len(papers) == 1
+    assert papers[0].pages == 27
 
 
 EMPTY_FEED = """<?xml version="1.0" encoding="UTF-8"?>
