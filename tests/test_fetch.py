@@ -95,6 +95,7 @@ def test_build_id_query_url_includes_id():
 def test_build_ids_query_url_joins_multiple_ids():
     url = fetch.build_ids_query_url(["2601.00001", "2601.00002", "2601.00003"])
     assert "id_list=2601.00001,2601.00002,2601.00003" in url
+    assert "max_results=3" in url
 
 
 def test_fetch_paper_by_id_returns_paper_when_found(monkeypatch):
@@ -247,3 +248,8 @@ def test_backfill_pages_chunks_requests_by_fifty(monkeypatch):
     fetch.backfill_pages(conn)
 
     assert len(calls) == 3  # 120 papers / 50 per chunk = 3 requests
+    # Each request's max_results must cover the full chunk, otherwise arXiv's
+    # default pagination (max_results=10) would silently truncate the batch.
+    assert "max_results=50" in calls[0]
+    assert "max_results=50" in calls[1]
+    assert "max_results=20" in calls[2]

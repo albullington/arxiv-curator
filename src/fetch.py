@@ -38,7 +38,7 @@ def build_id_query_url(arxiv_id: str) -> str:
 
 
 def build_ids_query_url(arxiv_ids: list[str]) -> str:
-    return f"{ARXIV_API_URL}?id_list={','.join(arxiv_ids)}"
+    return f"{ARXIV_API_URL}?id_list={','.join(arxiv_ids)}&max_results={len(arxiv_ids)}"
 
 
 def fetch_paper_by_id(arxiv_id: str) -> Optional[Paper]:
