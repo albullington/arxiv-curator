@@ -20,6 +20,21 @@ def make_seeded_conn():
     return conn
 
 
+def test_render_digest_shows_pages_when_known():
+    conn = make_seeded_conn()
+    conn.execute("UPDATE papers SET pages = 27 WHERE arxiv_id = '2601.00001'")
+    conn.commit()
+
+    text = digest.render_digest(conn, top_n=20)
+    assert "**Length:** 27 pages" in text
+
+
+def test_render_digest_omits_length_line_when_pages_unknown():
+    conn = make_seeded_conn()
+    text = digest.render_digest(conn, top_n=20)
+    assert "**Length:**" not in text
+
+
 def test_render_digest_includes_title_summary_score_and_explanation():
     conn = make_seeded_conn()
     text = digest.render_digest(conn, top_n=20)

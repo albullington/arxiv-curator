@@ -23,6 +23,8 @@ def render_digest(conn, top_n: int = 10, since: Optional[str] = None) -> str:
         summary = db.get_summary(conn, score.arxiv_id)
         lines.append(f"## [{paper.title}]({paper.url})")
         lines.append(f"**Score:** {score.final_score:.3f}  |  **arXiv:** {paper.arxiv_id}")
+        if paper.pages is not None:
+            lines.append(f"**Length:** {paper.pages} pages")
         lines.append("")
         lines.append(summary.text if summary else paper.abstract)
         lines.append("")

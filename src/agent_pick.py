@@ -239,6 +239,8 @@ def render_agent_pick_digest(conn, picked: list) -> str:
         summary = db.get_summary(conn, decision.arxiv_id)
         lines.append(f"## [{paper.title}]({paper.url})")
         lines.append(f"**arXiv:** {paper.arxiv_id}")
+        if paper.pages is not None:
+            lines.append(f"**Length:** {paper.pages} pages")
         lines.append("")
         lines.append(summary.text if summary else paper.abstract)
         lines.append("")
