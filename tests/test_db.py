@@ -7,6 +7,7 @@ def make_paper(arxiv_id="2601.00001"):
         arxiv_id=arxiv_id, title="Title", authors="Author",
         abstract="Abstract text.", categories="cs.AI",
         published="2026-01-01T00:00:00Z", url=f"https://arxiv.org/abs/{arxiv_id}",
+        pages=None,
     )
 
 
@@ -141,6 +142,33 @@ def test_init_db_adds_source_column_to_pre_existing_papers_table():
     assert row["source"] == "fetch"
 
 
+def test_init_db_adds_pages_column_to_pre_existing_papers_table():
+    conn = db.get_connection(":memory:")
+    conn.execute("""
+        CREATE TABLE papers (
+            arxiv_id TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            authors TEXT NOT NULL,
+            abstract TEXT NOT NULL,
+            categories TEXT NOT NULL,
+            published TEXT NOT NULL,
+            url TEXT NOT NULL,
+            first_seen_at TEXT NOT NULL,
+            source TEXT NOT NULL DEFAULT 'fetch'
+        )
+    """)
+    conn.execute(
+        "INSERT INTO papers (arxiv_id, title, authors, abstract, categories, published, url, first_seen_at) "
+        "VALUES ('legacy1', 'T', 'A', 'B', 'cs.AI', 'p', 'u', 'f')"
+    )
+    conn.commit()
+
+    db.init_db(conn)
+
+    row = conn.execute("SELECT pages FROM papers WHERE arxiv_id = 'legacy1'").fetchone()
+    assert row["pages"] is None
+
+
 def test_insert_paper_defaults_to_fetch_source():
     conn = make_conn()
     db.insert_paper(conn, make_paper())
@@ -258,3 +286,22 @@ def test_papers_without_agent_pick_decision_excludes_papers_with_feedback():
     ))
     candidates = db.papers_without_agent_pick_decision(conn)
     assert [p.arxiv_id for p in candidates] == ["unread1"]
+
+
+def test_papers_missing_pages_returns_only_null_pages():
+    conn = make_conn()
+    db.insert_paper(conn, make_paper("has_pages"))
+    db.insert_paper(conn, make_paper("no_pages"))
+    conn.execute("UPDATE papers SET pages = 12 WHERE arxiv_id = 'has_pages'")
+    conn.commit()
+
+    missing = db.papers_missing_pages(conn)
+    missing_ids = {p.arxiv_id for p in missing}
+    assert missing_ids == {"no_pages"}
+
+
+def test_update_paper_pages_sets_value():
+    conn = make_conn()
+    db.insert_paper(conn, make_paper("2601.00001"))
+    db.update_paper_pages(conn, "2601.00001", 15)
+    assert db.get_paper(conn, "2601.00001").pages == 15
