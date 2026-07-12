@@ -33,3 +33,30 @@ def test_feedback_with_rating_and_read_depth():
     )
     assert feedback.rating == "up"
     assert feedback.pages_read == 5
+
+
+def test_paper_pages_defaults_to_none():
+    paper = Paper(
+        arxiv_id="2601.00001",
+        title="A Paper",
+        authors="A. Author",
+        abstract="An abstract.",
+        categories="cs.AI",
+        published="2026-01-01T00:00:00Z",
+        url="https://arxiv.org/abs/2601.00001",
+    )
+    assert paper.pages is None
+
+
+def test_paper_accepts_pages():
+    paper = Paper(
+        arxiv_id="2601.00001",
+        title="A Paper",
+        authors="A. Author",
+        abstract="An abstract.",
+        categories="cs.AI",
+        published="2026-01-01T00:00:00Z",
+        url="https://arxiv.org/abs/2601.00001",
+        pages=27,
+    )
+    assert paper.pages == 27

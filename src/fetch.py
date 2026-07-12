@@ -1,3 +1,4 @@
+import re
 from typing import Optional
 
 import feedparser
@@ -7,6 +8,15 @@ from arxiv_curator import db
 from arxiv_curator.models import Paper
 
 ARXIV_API_URL = "http://export.arxiv.org/api/query"
+
+PAGE_COUNT_PATTERN = re.compile(r"(\d+)\s*pages?\b", re.IGNORECASE)
+
+
+def extract_page_count(comment: Optional[str]) -> Optional[int]:
+    if not comment:
+        return None
+    match = PAGE_COUNT_PATTERN.search(comment)
+    return int(match.group(1)) if match else None
 
 
 def build_query_url(categories: list[str], max_results: int) -> str:
@@ -50,6 +60,7 @@ def parse_feed(raw_text: str) -> list[Paper]:
             categories=categories,
             published=entry.published,
             url=entry.link,
+            pages=extract_page_count(entry.get("arxiv_comment")),
         ))
     return papers
 

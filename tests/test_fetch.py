@@ -120,3 +120,23 @@ def test_fetch_and_store_inserts_with_fetch_source(monkeypatch):
         "SELECT source FROM papers WHERE arxiv_id = ?", ("2601.00001v1",)
     ).fetchone()
     assert row["source"] == "fetch"
+
+
+def test_extract_page_count_finds_leading_page_count():
+    assert fetch.extract_page_count("27 pages, 2 figures, 1 table") == 27
+
+
+def test_extract_page_count_handles_singular_page():
+    assert fetch.extract_page_count("1 page") == 1
+
+
+def test_extract_page_count_returns_none_without_page_mention():
+    assert fetch.extract_page_count("Code and demo: https://example.com") is None
+
+
+def test_extract_page_count_returns_none_for_none_input():
+    assert fetch.extract_page_count(None) is None
+
+
+def test_extract_page_count_is_case_insensitive():
+    assert fetch.extract_page_count("8 Pages, 4 Figures") == 8
