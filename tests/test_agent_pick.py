@@ -262,6 +262,28 @@ def test_render_agent_pick_digest_includes_title_summary_and_reasoning():
     assert "arxiv-curator feedback p1 --rating up" in text
 
 
+def test_render_agent_pick_digest_shows_pages_when_known():
+    conn = make_conn()
+    db.insert_paper(conn, make_paper("p1", "An abstract."))
+    conn.execute("UPDATE papers SET pages = 9 WHERE arxiv_id = 'p1'")
+    conn.commit()
+
+    text = agent_pick.render_agent_pick_digest(conn, [
+        AgentPickDecision(arxiv_id="p1", status="picked", reasoning="Great fit.", decided_at="t"),
+    ])
+    assert "**Length:** 9 pages" in text
+
+
+def test_render_agent_pick_digest_omits_length_line_when_pages_unknown():
+    conn = make_conn()
+    db.insert_paper(conn, make_paper("p1", "An abstract."))
+
+    text = agent_pick.render_agent_pick_digest(conn, [
+        AgentPickDecision(arxiv_id="p1", status="picked", reasoning="Great fit.", decided_at="t"),
+    ])
+    assert "**Length:**" not in text
+
+
 def test_render_agent_pick_digest_falls_back_to_abstract_without_summary():
     conn = make_conn()
     db.insert_paper(conn, make_paper("p1", "The raw abstract text."))

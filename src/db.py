@@ -17,7 +17,8 @@ CREATE TABLE IF NOT EXISTS papers (
     published TEXT NOT NULL,
     url TEXT NOT NULL,
     first_seen_at TEXT NOT NULL,
-    source TEXT NOT NULL DEFAULT 'fetch'
+    source TEXT NOT NULL DEFAULT 'fetch',
+    pages INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS summaries (
@@ -69,6 +70,7 @@ def get_connection(db_path) -> sqlite3.Connection:
 def init_db(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
     _ensure_source_column(conn)
+    _ensure_pages_column(conn)
     conn.commit()
 
 
@@ -78,11 +80,17 @@ def _ensure_source_column(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE papers ADD COLUMN source TEXT NOT NULL DEFAULT 'fetch'")
 
 
+def _ensure_pages_column(conn: sqlite3.Connection) -> None:
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(papers)")}
+    if "pages" not in columns:
+        conn.execute("ALTER TABLE papers ADD COLUMN pages INTEGER")
+
+
 def _row_to_paper(row) -> Paper:
     return Paper(
         arxiv_id=row["arxiv_id"], title=row["title"], authors=row["authors"],
         abstract=row["abstract"], categories=row["categories"],
-        published=row["published"], url=row["url"],
+        published=row["published"], url=row["url"], pages=row["pages"],
     )
 
 
@@ -104,10 +112,10 @@ def _row_to_feedback(row) -> Feedback:
 def insert_paper(conn, paper: Paper, source: str = "fetch") -> None:
     conn.execute(
         "INSERT OR IGNORE INTO papers "
-        "(arxiv_id, title, authors, abstract, categories, published, url, first_seen_at, source) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "(arxiv_id, title, authors, abstract, categories, published, url, first_seen_at, source, pages) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (paper.arxiv_id, paper.title, paper.authors, paper.abstract, paper.categories,
-         paper.published, paper.url, datetime.now(timezone.utc).isoformat(), source),
+         paper.published, paper.url, datetime.now(timezone.utc).isoformat(), source, paper.pages),
     )
     conn.commit()
 
@@ -132,6 +140,16 @@ def list_papers_since(conn, cutoff_iso: str) -> list[Paper]:
         "SELECT * FROM papers WHERE first_seen_at >= ? AND source != 'manual'", (cutoff_iso,)
     ).fetchall()
     return [_row_to_paper(row) for row in rows]
+
+
+def papers_missing_pages(conn) -> list[Paper]:
+    rows = conn.execute("SELECT * FROM papers WHERE pages IS NULL").fetchall()
+    return [_row_to_paper(row) for row in rows]
+
+
+def update_paper_pages(conn, arxiv_id: str, pages: int) -> None:
+    conn.execute("UPDATE papers SET pages = ? WHERE arxiv_id = ?", (pages, arxiv_id))
+    conn.commit()
 
 
 def insert_summary(conn, summary: Summary) -> None:

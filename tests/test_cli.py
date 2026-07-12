@@ -199,6 +199,17 @@ def test_add_command_inserts_paper_with_manual_source(tmp_path, monkeypatch):
     assert row["source"] == "manual"
 
 
+def test_backfill_pages_command_reports_count(tmp_path, monkeypatch):
+    db_path = tmp_path / "test.db"
+    seed_db(db_path)
+    monkeypatch.setattr(cli, "DB_PATH", db_path)
+    monkeypatch.setattr(cli.fetch_module, "backfill_pages", lambda conn: 3)
+
+    result = runner.invoke(cli.app, ["backfill-pages"])
+    assert result.exit_code == 0
+    assert "3" in result.stdout
+
+
 def test_summarize_command_fails_cleanly_without_api_key(tmp_path, monkeypatch):
     db_path = tmp_path / "test.db"
     seed_db(db_path)

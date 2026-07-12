@@ -11,6 +11,7 @@ class Paper:
     categories: str
     published: str
     url: str
+    pages: Optional[int] = None
 
 
 @dataclass

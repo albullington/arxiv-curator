@@ -1,3 +1,4 @@
+import re
 from typing import Optional
 
 import feedparser
@@ -7,6 +8,15 @@ from arxiv_curator import db
 from arxiv_curator.models import Paper
 
 ARXIV_API_URL = "http://export.arxiv.org/api/query"
+
+PAGE_COUNT_PATTERN = re.compile(r"(\d+)\s*pages?\b", re.IGNORECASE)
+
+
+def extract_page_count(comment: Optional[str]) -> Optional[int]:
+    if not comment:
+        return None
+    match = PAGE_COUNT_PATTERN.search(comment)
+    return int(match.group(1)) if match else None
 
 
 def build_query_url(categories: list[str], max_results: int) -> str:
@@ -25,6 +35,10 @@ def normalize_arxiv_id(arxiv_id_or_url: str) -> str:
 
 def build_id_query_url(arxiv_id: str) -> str:
     return f"{ARXIV_API_URL}?id_list={arxiv_id}"
+
+
+def build_ids_query_url(arxiv_ids: list[str]) -> str:
+    return f"{ARXIV_API_URL}?id_list={','.join(arxiv_ids)}&max_results={len(arxiv_ids)}"
 
 
 def fetch_paper_by_id(arxiv_id: str) -> Optional[Paper]:
@@ -50,6 +64,7 @@ def parse_feed(raw_text: str) -> list[Paper]:
             categories=categories,
             published=entry.published,
             url=entry.link,
+            pages=extract_page_count(entry.get("arxiv_comment")),
         ))
     return papers
 
@@ -69,3 +84,21 @@ def fetch_and_store(conn, categories: list[str], max_results: int) -> int:
             db.insert_paper(conn, paper, source="fetch")
             new_count += 1
     return new_count
+
+
+BACKFILL_CHUNK_SIZE = 50
+
+
+def backfill_pages(conn) -> int:
+    missing = db.papers_missing_pages(conn)
+    updated_count = 0
+    for i in range(0, len(missing), BACKFILL_CHUNK_SIZE):
+        chunk = missing[i:i + BACKFILL_CHUNK_SIZE]
+        url = build_ids_query_url([p.arxiv_id for p in chunk])
+        response = requests.get(url, timeout=30)
+        response.raise_for_status()
+        for paper in parse_feed(response.text):
+            if paper.pages is not None:
+                db.update_paper_pages(conn, paper.arxiv_id, paper.pages)
+                updated_count += 1
+    return updated_count
