@@ -65,6 +65,21 @@ def test_evaluate_returns_metrics_with_enough_feedback():
     assert "precision_at_10" in result["random_baseline"]
 
 
+def test_evaluate_ok_result_includes_rated_count_and_n_papers():
+    vectors_by_id = {
+        str(i): (np.array([1.0, 0.0]) if i % 2 == 0 else np.array([0.0, 1.0]))
+        for i in range(6)
+    }
+    feedback_items = [
+        Feedback(arxiv_id=str(i), created_at="t", rating="up" if i % 2 == 0 else "down")
+        for i in range(6)
+    ]
+    result = evaluate(feedback_items, vectors_by_id, interest_vector=np.array([1.0, 0.0]))
+    assert result["status"] == "ok"
+    assert result["rated_count"] == 6
+    assert result["n_papers"] == 6
+
+
 def test_run_eval_wires_db_and_embeddings(tmp_path, monkeypatch):
     conn = db.get_connection(":memory:")
     db.init_db(conn)

@@ -100,6 +100,8 @@ def evaluate(
     return {
         "status": "ok",
         "n_evaluated": n_evaluated,
+        "rated_count": len(rated),
+        "n_papers": len(vectors_by_id),
         "feedback_adjusted": {k: _avg(v) for k, v in metrics["feedback_adjusted"].items()},
         "similarity_only_baseline": {k: _avg(v) for k, v in metrics["similarity_only_baseline"].items()},
         "random_baseline": {k: _avg(v) for k, v in metrics["random_baseline"].items()},
