@@ -1,9 +1,11 @@
+import json
+
 import numpy as np
 import pytest
 
 from arxiv_curator import db, eval as eval_module, rank
 from arxiv_curator.models import Feedback, Paper
-from arxiv_curator.eval import precision_at_k, ndcg_at_k, mrr, evaluate
+from arxiv_curator.eval import precision_at_k, ndcg_at_k, mrr, evaluate, append_history
 
 
 def test_precision_at_k_counts_hits_in_top_k():
@@ -101,3 +103,36 @@ def test_run_eval_wires_db_and_embeddings(tmp_path, monkeypatch):
     monkeypatch.setattr(rank, "embed_texts", fake_embed_texts)
     result = eval_module.run_eval(conn, interests_path, client=None)
     assert result["status"] == "ok"
+
+
+def _ok_result():
+    metric_block = {"precision_at_5": 0.08, "precision_at_10": 0.06, "ndcg_at_10": 0.249, "mrr": 0.146}
+    return {
+        "status": "ok",
+        "n_evaluated": 5,
+        "rated_count": 5,
+        "n_papers": 312,
+        "feedback_adjusted": dict(metric_block),
+        "similarity_only_baseline": dict(metric_block),
+        "random_baseline": dict(metric_block),
+    }
+
+
+def test_append_history_writes_parseable_line_with_timestamp(tmp_path):
+    path = append_history(_ok_result(), tmp_path)
+    assert path == tmp_path / "eval_history.jsonl"
+    lines = path.read_text().splitlines()
+    assert len(lines) == 1
+    record = json.loads(lines[0])
+    assert record["rated_count"] == 5
+    assert record["n_papers"] == 312
+    assert record["feedback_adjusted"]["ndcg_at_10"] == 0.249
+    assert "status" not in record
+    assert record["timestamp"].endswith("+00:00")
+
+
+def test_append_history_appends_rather_than_overwrites(tmp_path):
+    append_history(_ok_result(), tmp_path)
+    append_history(_ok_result(), tmp_path)
+    lines = (tmp_path / "eval_history.jsonl").read_text().splitlines()
+    assert len(lines) == 2

@@ -1,4 +1,7 @@
+import json
 import random
+from datetime import datetime, timezone
+from pathlib import Path
 
 import numpy as np
 
@@ -115,3 +118,14 @@ def run_eval(conn, interests_path, client) -> dict:
     vectors_by_id = rank.get_paper_vectors(conn, papers, client) if papers else {}
     feedback_items = db.list_feedback(conn)
     return evaluate(feedback_items, vectors_by_id, interest_vector)
+
+
+def append_history(result: dict, data_dir: Path) -> Path:
+    """Append an ok eval result + UTC timestamp as one line of eval_history.jsonl."""
+    record = {"timestamp": datetime.now(timezone.utc).isoformat()}
+    record.update({k: v for k, v in result.items() if k != "status"})
+    path = data_dir / "eval_history.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a") as f:
+        f.write(json.dumps(record) + "\n")
+    return path
