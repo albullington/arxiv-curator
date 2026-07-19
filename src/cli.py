@@ -208,6 +208,9 @@ def eval_cmd():
             typer.echo(f"  {metric_name}: {value:.3f}")
         typer.echo("")
 
+    history_path = eval_module.append_history(result, DATA_DIR)
+    typer.echo(f"Recorded eval run to {history_path}")
+
 
 @app.command()
 def run():
