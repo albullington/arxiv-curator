@@ -348,3 +348,43 @@ def test_agent_pick_command_fails_cleanly_without_api_key(tmp_path, monkeypatch)
     result = runner.invoke(cli.app, ["agent-pick"])
     assert result.exit_code == 1
     assert "GEMINI_API_KEY" in result.output
+
+
+def _canned_ok_eval_result():
+    metric_block = {"precision_at_5": 0.08, "precision_at_10": 0.06, "ndcg_at_10": 0.249, "mrr": 0.146}
+    return {
+        "status": "ok",
+        "n_evaluated": 5,
+        "rated_count": 5,
+        "n_papers": 312,
+        "feedback_adjusted": dict(metric_block),
+        "similarity_only_baseline": dict(metric_block),
+        "random_baseline": dict(metric_block),
+    }
+
+
+def test_eval_command_appends_history_on_ok_result(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, "DB_PATH", tmp_path / "test.db")
+    monkeypatch.setattr(cli, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(cli.factory, "get_client", lambda: None)
+    monkeypatch.setattr(cli.eval_module, "run_eval", lambda conn, path, client: _canned_ok_eval_result())
+
+    result = runner.invoke(cli.app, ["eval"])
+    assert result.exit_code == 0
+    assert "Recorded eval run to" in result.output
+    history = (tmp_path / "eval_history.jsonl").read_text().splitlines()
+    assert len(history) == 1
+
+
+def test_eval_command_skips_history_on_insufficient_data(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, "DB_PATH", tmp_path / "test.db")
+    monkeypatch.setattr(cli, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(cli.factory, "get_client", lambda: None)
+    monkeypatch.setattr(
+        cli.eval_module, "run_eval",
+        lambda conn, path, client: {"status": "insufficient_data", "rated_count": 2},
+    )
+
+    result = runner.invoke(cli.app, ["eval"])
+    assert result.exit_code == 0
+    assert not (tmp_path / "eval_history.jsonl").exists()
